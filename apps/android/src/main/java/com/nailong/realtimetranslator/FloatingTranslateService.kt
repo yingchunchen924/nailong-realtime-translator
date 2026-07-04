@@ -77,6 +77,10 @@ class FloatingTranslateService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: savedTargetLanguage()
         showOriginal = intent?.takeIf { it.hasExtra(EXTRA_SHOW_ORIGINAL) }?.getBooleanExtra(EXTRA_SHOW_ORIGINAL, false)
             ?: savedShowOriginal()
@@ -537,6 +541,15 @@ class FloatingTranslateService : Service() {
             openIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val stopIntent = Intent(this, FloatingTranslateService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this,
+            1,
+            stopIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -548,6 +561,7 @@ class FloatingTranslateService : Service() {
             .setContentTitle("奶龙实时翻译")
             .setContentText("后台翻译运行中")
             .setContentIntent(pendingIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stopPendingIntent)
             .setOngoing(true)
             .build()
     }
@@ -583,6 +597,7 @@ class FloatingTranslateService : Service() {
         const val EXTRA_TEXT_OVERLAY_MODE = "text_overlay_mode"
         const val EXTRA_STT_ENDPOINT = "stt_endpoint"
         const val EXTRA_STT_API_KEY = "stt_api_key"
+        const val ACTION_STOP = "com.nailong.realtimetranslator.STOP"
         const val LANG_CHINESE = "zh"
         const val LANG_ENGLISH = "en"
         const val LANG_JAPANESE = "ja"

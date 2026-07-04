@@ -26,6 +26,18 @@ pytest -q tests\test_windows_ocr_blocks.py
 
 推荐用 Android Studio 打开仓库根目录并运行 `apps:android`。
 
+如果 SDK 安装在 D 盘，推荐路径：
+
+```text
+D:\Android\Sdk
+```
+
+可先运行环境检查：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check_android_env.ps1
+```
+
 命令行构建：
 
 ```bat
