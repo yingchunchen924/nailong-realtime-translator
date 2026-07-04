@@ -1,10 +1,10 @@
 $ErrorActionPreference = "SilentlyContinue"
 
-$sdkCandidates = @(
+[array]$sdkCandidates = @(
     $env:ANDROID_HOME,
     $env:ANDROID_SDK_ROOT,
     "D:\Android\Sdk",
-    "$env:LOCALAPPDATA\Android\Sdk"
+    "${env:LOCALAPPDATA}\Android\Sdk"
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 
 if (-not $sdkCandidates) {
@@ -12,7 +12,13 @@ if (-not $sdkCandidates) {
     exit 1
 }
 
-$sdk = $sdkCandidates[0]
+$sdk = [string]$sdkCandidates[0]
+if (-not (Test-Path (Join-Path $sdk "platforms\android-36")) -and (Test-Path (Join-Path $sdk "platforms\android-36.1"))) {
+    $compatSdk = Join-Path $env:USERPROFILE "Documents\Codex\android-sdk-compat"
+    if (Test-Path (Join-Path $compatSdk "platforms\android-36")) {
+        $sdk = $compatSdk
+    }
+}
 Write-Host "Android SDK: $sdk"
 
 $adb = Join-Path $sdk "platform-tools\adb.exe"

@@ -7,8 +7,6 @@ apps\windows\install_dependencies.bat
 apps\windows\build_exe.bat
 ```
 
-脚本会把 PyInstaller 的临时用户目录和配置目录放在 `apps\windows\build` 内，避免受系统用户目录权限影响。
-
 产物位置：
 
 ```text
@@ -24,18 +22,16 @@ pytest -q tests\test_windows_ocr_blocks.py
 
 ## Android
 
-推荐用 Android Studio 打开仓库根目录并运行 `apps:android`。
-
-如果 SDK 安装在 D 盘，推荐路径：
+先确认 Android Studio 和 SDK 已安装。本机已验证 SDK 位于：
 
 ```text
-D:\Android\Sdk
+C:\Users\hp\AppData\Local\Android\Sdk
 ```
 
-可先运行环境检查：
+如果只安装了 `android-36.1` 平台，脚本会自动在用户文档目录创建一个兼容 SDK 镜像：
 
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\check_android_env.ps1
+```text
+C:\Users\hp\Documents\Codex\android-sdk-compat
 ```
 
 命令行构建：
@@ -44,12 +40,21 @@ powershell -ExecutionPolicy Bypass -File scripts\check_android_env.ps1
 apps\android\build_apk.bat
 ```
 
+也可以直接运行：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build_android_apk.ps1
+```
+
 产物位置：
 
 ```text
 apps\android\build\outputs\apk\debug\android-debug.apk
 ```
 
-Android 构建需要本机安装 Android SDK。GitHub Actions 会在云端自动准备 SDK。
+本机已通过 `:apps:android:assembleDebug`，发布目录中也已生成：
 
-仓库没有提交 Gradle Wrapper，Android CI 会通过 `gradle/actions/setup-gradle` 安装 Gradle 8.10.2 后执行构建。
+```text
+outputs\nailong-realtime-translator-release\nailong-android-debug.apk
+outputs\nailong-realtime-translator-release\nailong-android-debug.zip
+```
