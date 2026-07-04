@@ -28,6 +28,7 @@ class MainActivity : Activity() {
     private lateinit var originalButton: Button
     private lateinit var textOverlayButton: Button
     private lateinit var sttEndpointInput: EditText
+    private lateinit var sttModelInput: EditText
     private lateinit var sttApiKeyInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -40,7 +41,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        if (::sttEndpointInput.isInitialized && ::sttApiKeyInput.isInitialized) {
+        if (::sttEndpointInput.isInitialized && ::sttModelInput.isInitialized && ::sttApiKeyInput.isInitialized) {
             saveSettings()
         }
     }
@@ -85,6 +86,11 @@ class MainActivity : Activity() {
             setSingleLine(true)
             setText(preferences.getString(AppSettings.KEY_STT_ENDPOINT, WhisperHttpAudioSubtitleEngine.DEFAULT_ENDPOINT))
         }
+        sttModelInput = EditText(this).apply {
+            hint = "语音转写模型"
+            setSingleLine(true)
+            setText(preferences.getString(AppSettings.KEY_STT_MODEL, WhisperHttpAudioSubtitleEngine.DEFAULT_MODEL))
+        }
         sttApiKeyInput = EditText(this).apply {
             hint = "语音转写 API Key（不填则只监听音频）"
             setSingleLine(true)
@@ -107,6 +113,7 @@ class MainActivity : Activity() {
         root.addView(originalButton, buttonParams())
         root.addView(textOverlayButton, buttonParams())
         root.addView(sttEndpointInput, buttonParams())
+        root.addView(sttModelInput, buttonParams())
         root.addView(sttApiKeyInput, buttonParams())
         root.addView(screenButton, buttonParams())
         root.addView(stopButton, buttonParams())
@@ -187,6 +194,7 @@ class MainActivity : Activity() {
             .putBoolean(AppSettings.KEY_SHOW_ORIGINAL, showOriginal)
             .putBoolean(AppSettings.KEY_TEXT_OVERLAY_MODE, textOverlayMode)
             .putString(AppSettings.KEY_STT_ENDPOINT, sttEndpointInput.text.toString())
+            .putString(AppSettings.KEY_STT_MODEL, sttModelInput.text.toString())
             .putString(AppSettings.KEY_STT_API_KEY, sttApiKeyInput.text.toString())
             .apply()
     }
@@ -203,6 +211,7 @@ class MainActivity : Activity() {
                 putExtra(FloatingTranslateService.EXTRA_SHOW_ORIGINAL, showOriginal)
                 putExtra(FloatingTranslateService.EXTRA_TEXT_OVERLAY_MODE, textOverlayMode)
                 putExtra(FloatingTranslateService.EXTRA_STT_ENDPOINT, sttEndpointInput.text.toString())
+                putExtra(FloatingTranslateService.EXTRA_STT_MODEL, sttModelInput.text.toString())
                 putExtra(FloatingTranslateService.EXTRA_STT_API_KEY, sttApiKeyInput.text.toString())
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

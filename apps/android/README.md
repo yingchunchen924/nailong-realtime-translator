@@ -13,9 +13,9 @@
 - 使用 ML Kit Language ID 自动判断源语言。
 - 使用 ML Kit Translate 翻译为中文、英语、日语、韩语、德语、法语、俄语。
 - 使用 AudioPlaybackCapture 捕获手机当前播放的媒体或游戏音频。
-- `AudioSubtitleEngine` 支持 OpenAI Whisper 兼容 HTTP 转写接口。
+- `AudioSubtitleEngine` 支持 OpenAI Whisper 兼容 HTTP 转写接口，可配置 endpoint、模型名和 API Key。
 - 不填写 API Key 时，音频捕获会运行，但只显示监听状态。
-- 保存目标语言、是否显示原文、文字覆盖模式、语音转写接口和 API Key。
+- 保存目标语言、是否显示原文、文字覆盖模式、语音转写接口、模型名和 API Key。
 - 原文显示关闭时只显示译文，开启时显示原文和译文。
 - 文字覆盖模式会翻译最多 10 个屏幕文字块，并减少同一画面重复重建造成的闪烁。
 - 前台通知带有“停止”按钮，可直接关闭后台翻译、音频捕获和悬浮层。

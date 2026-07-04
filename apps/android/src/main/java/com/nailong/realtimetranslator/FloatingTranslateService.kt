@@ -113,9 +113,13 @@ class FloatingTranslateService : Service() {
             intent?.getStringExtra(EXTRA_STT_API_KEY)
                 ?: preferences.getString(AppSettings.KEY_STT_API_KEY, "")
         ).orEmpty().trim()
+        val model = (
+            intent?.getStringExtra(EXTRA_STT_MODEL)
+                ?: preferences.getString(AppSettings.KEY_STT_MODEL, WhisperHttpAudioSubtitleEngine.DEFAULT_MODEL)
+        ).orEmpty().trim().ifBlank { WhisperHttpAudioSubtitleEngine.DEFAULT_MODEL }
         audioSubtitleEngine.close()
         audioSubtitleEngine = if (endpoint.isNotBlank() && apiKey.isNotBlank()) {
-            WhisperHttpAudioSubtitleEngine(endpoint, apiKey)
+            WhisperHttpAudioSubtitleEngine(endpoint, apiKey, model)
         } else {
             PlaceholderAudioSubtitleEngine()
         }
@@ -604,6 +608,7 @@ class FloatingTranslateService : Service() {
         const val EXTRA_SHOW_ORIGINAL = "show_original"
         const val EXTRA_TEXT_OVERLAY_MODE = "text_overlay_mode"
         const val EXTRA_STT_ENDPOINT = "stt_endpoint"
+        const val EXTRA_STT_MODEL = "stt_model"
         const val EXTRA_STT_API_KEY = "stt_api_key"
         const val ACTION_STOP = "com.nailong.realtimetranslator.STOP"
         const val LANG_CHINESE = "zh"

@@ -49,7 +49,7 @@ class PlaceholderAudioSubtitleEngine : AudioSubtitleEngine {
 class WhisperHttpAudioSubtitleEngine(
     private val endpoint: String,
     private val apiKey: String,
-    private val model: String = "whisper-1"
+    private val model: String = DEFAULT_MODEL
 ) : AudioSubtitleEngine {
     private var pending = ShortArray(CHUNK_SAMPLE_RATE_SECONDS * DEFAULT_SAMPLE_RATE)
     private var pendingLength = 0
@@ -217,6 +217,7 @@ class WhisperHttpAudioSubtitleEngine(
 
     companion object {
         const val DEFAULT_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions"
+        const val DEFAULT_MODEL = "whisper-1"
         private const val DEFAULT_SAMPLE_RATE = 16000
         private const val CHUNK_SAMPLE_RATE_SECONDS = 5
         private const val ERROR_NOTICE_INTERVAL_MS = 8000L
