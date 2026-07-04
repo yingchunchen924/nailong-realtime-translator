@@ -11,8 +11,13 @@ import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioPlaybackCaptureConfiguration
+import android.media.AudioRecord
 import android.media.Image
 import android.media.ImageReader
+import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -44,6 +49,10 @@ class FloatingTranslateService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private var audioRecord: AudioRecord? = null
+    private var audioThread: Thread? = null
+    @Volatile private var isAudioCapturing = false
+    private val audioSubtitleEngine: AudioSubtitleEngine = PlaceholderAudioSubtitleEngine()
     private val latinRecognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private val chineseRecognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
     private val japaneseRecognizer by lazy { TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build()) }
@@ -75,6 +84,7 @@ class FloatingTranslateService : Service() {
         }
         if (resultCode != 0 && data != null) {
             startProjection(resultCode, data)
+            startPlaybackAudioCapture()
         }
         return START_STICKY
     }
@@ -145,6 +155,77 @@ class FloatingTranslateService : Service() {
             isRecognizing = true
             recognizeScreenImage(image)
         }, mainHandler)
+    }
+
+    private fun startPlaybackAudioCapture() {
+        val projection = mediaProjection ?: return
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || isAudioCapturing) return
+
+        val config = AudioPlaybackCaptureConfiguration.Builder(projection)
+            .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
+            .addMatchingUsage(AudioAttributes.USAGE_GAME)
+            .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
+            .build()
+        val audioFormat = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(AUDIO_SAMPLE_RATE)
+            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+            .build()
+        val minBufferSize = AudioRecord.getMinBufferSize(
+            AUDIO_SAMPLE_RATE,
+            AudioFormat.CHANNEL_IN_MONO,
+            AudioFormat.ENCODING_PCM_16BIT
+        )
+        val bufferSize = maxOf(minBufferSize, AUDIO_SAMPLE_RATE * 2)
+        audioRecord = AudioRecord.Builder()
+            .setAudioPlaybackCaptureConfig(config)
+            .setAudioFormat(audioFormat)
+            .setBufferSizeInBytes(bufferSize)
+            .build()
+
+        isAudioCapturing = true
+        audioThread = Thread {
+            capturePlaybackAudio(bufferSize)
+        }.apply {
+            name = "NailongPlaybackAudioCapture"
+            start()
+        }
+    }
+
+    private fun capturePlaybackAudio(bufferSize: Int) {
+        val recorder = audioRecord ?: return
+        val buffer = ShortArray(bufferSize / 2)
+        try {
+            recorder.startRecording()
+            while (isAudioCapturing) {
+                val read = recorder.read(buffer, 0, buffer.size)
+                if (read <= 0) continue
+                val rms = calculateRms(buffer, read)
+                if (rms > AUDIO_ACTIVITY_THRESHOLD) {
+                    audioSubtitleEngine.acceptPcm16(buffer, read, AUDIO_SAMPLE_RATE) { subtitle ->
+                        mainHandler.post {
+                            overlayView?.text = subtitle
+                        }
+                    }
+                }
+            }
+        } catch (_: SecurityException) {
+            mainHandler.post {
+                overlayView?.text = "音频捕获权限不足，请重新授权录音和屏幕捕获"
+            }
+        } finally {
+            runCatching { recorder.stop() }
+        }
+    }
+
+    private fun calculateRms(buffer: ShortArray, length: Int): Double {
+        if (length <= 0) return 0.0
+        var sum = 0.0
+        for (index in 0 until length) {
+            val sample = buffer[index].toDouble() / Short.MAX_VALUE
+            sum += sample * sample
+        }
+        return kotlin.math.sqrt(sum / length)
     }
 
     private fun recognizeScreenImage(image: Image) {
@@ -326,6 +407,10 @@ class FloatingTranslateService : Service() {
     }
 
     override fun onDestroy() {
+        isAudioCapturing = false
+        audioThread?.interrupt()
+        audioRecord?.release()
+        audioSubtitleEngine.close()
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()
@@ -358,5 +443,7 @@ class FloatingTranslateService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val OCR_INTERVAL_MS = 1200L
         private const val MIN_TEXT_LENGTH = 2
+        private const val AUDIO_SAMPLE_RATE = 16000
+        private const val AUDIO_ACTIVITY_THRESHOLD = 0.015
     }
 }

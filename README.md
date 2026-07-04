@@ -35,4 +35,5 @@ Android 端正在按原生悬浮窗方案实现：
 - ML Kit 识别屏幕帧文字，当前先显示识别原文。
 - ML Kit on-device Translate 支持中文、英语、日语、韩语、德语、法语、俄语目标语言切换。
 - ML Kit Language ID 用于自动识别源语言，改善英语、德语、法语等拉丁文字语言区分。
-- 后续接入音频捕获、Whisper API 或端侧语音识别。
+- Android 已接入系统播放音频捕获管线，并预留语音字幕引擎接口。
+- 后续接入 Whisper API 或端侧语音识别。
