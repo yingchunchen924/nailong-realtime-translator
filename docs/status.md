@@ -33,13 +33,13 @@
 - Foreground Service 后台运行。
 - 屏幕底部一行悬浮字幕。
 - ML Kit 屏幕帧 OCR：中文、日文、韩文、拉丁文字。
-- ML Kit Translate：基础中文/英语目标语言切换。
+- ML Kit Translate：中文、英语、日语、韩语、德语、法语、俄语目标语言切换。
 
 待继续：
 
 - 安装 Android SDK 并构建 APK。
 - 评估 PaddleOCR Android 作为复杂场景增强。
-- 扩展 Android 目标语言列表到日语、韩语、德语、法语、俄语等。
+- 增强 Android 源语言自动识别，尤其是德语/法语/英语之间的区分。
 - 接入 Android 音频捕获/语音识别。
 - 接入音频捕获/语音识别。
 

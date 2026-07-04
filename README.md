@@ -33,5 +33,5 @@ Android 端正在按原生悬浮窗方案实现：
 - Foreground Service 后台运行。
 - WindowManager 显示一行字幕/文字覆盖。
 - ML Kit 识别屏幕帧文字，当前先显示识别原文。
-- ML Kit on-device Translate 支持基础中文/英语目标语言切换。
+- ML Kit on-device Translate 支持中文、英语、日语、韩语、德语、法语、俄语目标语言切换。
 - 后续接入音频捕获、Whisper API 或端侧语音识别。

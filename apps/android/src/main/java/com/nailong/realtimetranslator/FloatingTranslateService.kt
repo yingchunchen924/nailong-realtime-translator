@@ -184,10 +184,7 @@ class FloatingTranslateService : Service() {
 
     private fun translateText(text: String) {
         val sourceLanguage = guessSourceLanguage(text)
-        val target = when (targetLanguage) {
-            LANG_ENGLISH -> TranslateLanguage.ENGLISH
-            else -> TranslateLanguage.CHINESE
-        }
+        val target = targetLanguage.toMlKitLanguage()
         if (sourceLanguage == target) {
             overlayView?.text = text
             return
@@ -228,6 +225,18 @@ class FloatingTranslateService : Service() {
             text.any { it in '\uac00'..'\ud7af' } -> TranslateLanguage.KOREAN
             text.any { it in '\u0400'..'\u04ff' } -> TranslateLanguage.RUSSIAN
             else -> TranslateLanguage.ENGLISH
+        }
+    }
+
+    private fun String.toMlKitLanguage(): String {
+        return when (this) {
+            LANG_ENGLISH -> TranslateLanguage.ENGLISH
+            LANG_JAPANESE -> TranslateLanguage.JAPANESE
+            LANG_KOREAN -> TranslateLanguage.KOREAN
+            LANG_GERMAN -> TranslateLanguage.GERMAN
+            LANG_FRENCH -> TranslateLanguage.FRENCH
+            LANG_RUSSIAN -> TranslateLanguage.RUSSIAN
+            else -> TranslateLanguage.CHINESE
         }
     }
 
@@ -300,6 +309,11 @@ class FloatingTranslateService : Service() {
         const val EXTRA_TARGET_LANGUAGE = "target_language"
         const val LANG_CHINESE = "zh"
         const val LANG_ENGLISH = "en"
+        const val LANG_JAPANESE = "ja"
+        const val LANG_KOREAN = "ko"
+        const val LANG_GERMAN = "de"
+        const val LANG_FRENCH = "fr"
+        const val LANG_RUSSIAN = "ru"
         private const val CHANNEL_ID = "nailong_translate"
         private const val NOTIFICATION_ID = 1001
         private const val OCR_INTERVAL_MS = 1200L

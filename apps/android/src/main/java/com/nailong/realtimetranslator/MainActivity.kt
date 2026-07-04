@@ -16,7 +16,7 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
-    private var targetLanguage = FloatingTranslateService.LANG_CHINESE
+    private var targetIndex = 0
     private lateinit var targetButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,7 +49,7 @@ class MainActivity : Activity() {
             setOnClickListener { requestOverlayPermission() }
         }
         targetButton = Button(this).apply {
-            text = "目标语言：中文"
+            text = targetButtonText()
             setOnClickListener { toggleTargetLanguage() }
         }
         val screenButton = Button(this).apply {
@@ -102,16 +102,12 @@ class MainActivity : Activity() {
     }
 
     private fun toggleTargetLanguage() {
-        targetLanguage = if (targetLanguage == FloatingTranslateService.LANG_CHINESE) {
-            FloatingTranslateService.LANG_ENGLISH
-        } else {
-            FloatingTranslateService.LANG_CHINESE
-        }
-        targetButton.text = if (targetLanguage == FloatingTranslateService.LANG_CHINESE) {
-            "目标语言：中文"
-        } else {
-            "目标语言：英语"
-        }
+        targetIndex = (targetIndex + 1) % TARGET_LANGUAGES.size
+        targetButton.text = targetButtonText()
+    }
+
+    private fun targetButtonText(): String {
+        return "目标语言：${TARGET_LANGUAGES[targetIndex].label}"
     }
 
     @Deprecated("Android framework callback")
@@ -121,7 +117,7 @@ class MainActivity : Activity() {
             val serviceIntent = Intent(this, FloatingTranslateService::class.java).apply {
                 putExtra(FloatingTranslateService.EXTRA_RESULT_CODE, resultCode)
                 putExtra(FloatingTranslateService.EXTRA_RESULT_DATA, data)
-                putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, targetLanguage)
+                putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, TARGET_LANGUAGES[targetIndex].code)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)
@@ -134,5 +130,16 @@ class MainActivity : Activity() {
 
     companion object {
         private const val REQUEST_PROJECTION = 24
+        private data class TargetLanguage(val label: String, val code: String)
+
+        private val TARGET_LANGUAGES = listOf(
+            TargetLanguage("中文", FloatingTranslateService.LANG_CHINESE),
+            TargetLanguage("英语", FloatingTranslateService.LANG_ENGLISH),
+            TargetLanguage("日语", FloatingTranslateService.LANG_JAPANESE),
+            TargetLanguage("韩语", FloatingTranslateService.LANG_KOREAN),
+            TargetLanguage("德语", FloatingTranslateService.LANG_GERMAN),
+            TargetLanguage("法语", FloatingTranslateService.LANG_FRENCH),
+            TargetLanguage("俄语", FloatingTranslateService.LANG_RUSSIAN),
+        )
     }
 }
