@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from tkinter import messagebox, ttk
 
@@ -76,6 +76,8 @@ TESSERACT_LANGS = {
     "pt": "por",
 }
 
+MAX_TEXT_BLOCKS = 8
+
 
 @dataclass(frozen=True)
 class CaptureRegion:
@@ -97,12 +99,26 @@ class CaptureRegion:
 
 
 @dataclass
+class TextBlock:
+    source: str
+    translated: str
+    region: CaptureRegion
+
+
+@dataclass
+class OcrResult:
+    text: str
+    blocks: list[TextBlock] = field(default_factory=list)
+
+
+@dataclass
 class Subtitle:
     source: str
     translated: str
     origin: str
     status: str
     region: CaptureRegion | None = None
+    blocks: list[TextBlock] = field(default_factory=list)
 
 
 class OptionalEngines:
@@ -194,9 +210,13 @@ class TesseractOcrEngine:
         return bool(self.engines.pytesseract)
 
     def recognize(self, image: Image.Image, source_lang: str) -> str:
-        if not self.engines.mss or not self.engines.pytesseract:
-            return "OCR 依赖未安装"
+        return self.recognize_with_blocks(image, source_lang, 0, 0).text
 
+    def recognize_with_blocks(self, image: Image.Image, source_lang: str, origin_left: int, origin_top: int) -> OcrResult:
+        if not self.engines.mss or not self.engines.pytesseract:
+            return OcrResult("OCR 依赖未安装")
+
+        scale = 1.0
         max_side = 1800
         if max(image.size) < max_side:
             scale = min(2.0, max_side / max(1, max(image.size)))
@@ -209,28 +229,102 @@ class TesseractOcrEngine:
             config = "--psm 6"
             if LOCAL_TESSDATA_DIR.exists():
                 config = f"--tessdata-dir {LOCAL_TESSDATA_DIR} --psm 6"
-            text = self._best_ocr_result(gray, languages, config)
+            text, blocks = self._best_ocr_result(gray, languages, config, scale, origin_left, origin_top)
         except Exception as exc:
-            return f"OCR 失败：{exc}"
+            return OcrResult(f"OCR 失败：{exc}")
 
         lines = [line.strip() for line in text.splitlines() if line.strip()]
-        return "\n".join(lines[:6])
+        return OcrResult("\n".join(lines[:6]), blocks[:MAX_TEXT_BLOCKS])
 
     def _ocr_languages(self, source_lang: str) -> list[str]:
         if source_lang == "auto":
             return ["eng", "chi_sim", "jpn", "kor", "deu+fra+rus+spa+ita+por"]
         return [TESSERACT_LANGS.get(source_lang, "eng")]
 
-    def _best_ocr_result(self, image: Image.Image, languages: list[str], config: str) -> str:
+    def _best_ocr_result(
+        self,
+        image: Image.Image,
+        languages: list[str],
+        config: str,
+        scale: float,
+        origin_left: int,
+        origin_top: int,
+    ) -> tuple[str, list[TextBlock]]:
         best_text = ""
+        best_blocks: list[TextBlock] = []
         best_score = -1
         for lang in languages:
-            text = self.engines.pytesseract.image_to_string(image, lang=lang, config=config)
+            text, blocks = self._ocr_text_and_blocks(image, lang, config, scale, origin_left, origin_top)
             score = sum(ch.isalnum() or "\u4e00" <= ch <= "\u9fff" or "\u3040" <= ch <= "\u30ff" or "\uac00" <= ch <= "\ud7af" for ch in text)
             if score > best_score:
                 best_text = text
+                best_blocks = blocks
                 best_score = score
-        return best_text
+        return best_text, best_blocks
+
+    def _ocr_text_and_blocks(
+        self,
+        image: Image.Image,
+        lang: str,
+        config: str,
+        scale: float,
+        origin_left: int,
+        origin_top: int,
+    ) -> tuple[str, list[TextBlock]]:
+        pytesseract = self.engines.pytesseract
+        text = pytesseract.image_to_string(image, lang=lang, config=config)
+        try:
+            data = pytesseract.image_to_data(image, lang=lang, config=config, output_type=pytesseract.Output.DICT)
+        except Exception:
+            return text, []
+        return text, self._line_blocks_from_data(data, scale, origin_left, origin_top)
+
+    def _line_blocks_from_data(self, data: dict[str, list], scale: float, origin_left: int, origin_top: int) -> list[TextBlock]:
+        grouped: dict[tuple[int, int, int], list[dict[str, object]]] = {}
+        total = len(data.get("text", []))
+        for index in range(total):
+            word = str(data["text"][index]).strip()
+            if not word:
+                continue
+            try:
+                confidence = float(data["conf"][index])
+            except (TypeError, ValueError):
+                confidence = -1
+            if confidence < 35:
+                continue
+            key = (
+                int(data["block_num"][index]),
+                int(data["par_num"][index]),
+                int(data["line_num"][index]),
+            )
+            grouped.setdefault(key, []).append(
+                {
+                    "text": word,
+                    "left": int(data["left"][index]),
+                    "top": int(data["top"][index]),
+                    "width": int(data["width"][index]),
+                    "height": int(data["height"][index]),
+                }
+            )
+
+        blocks: list[TextBlock] = []
+        for words in grouped.values():
+            line = " ".join(str(item["text"]) for item in words).strip()
+            if len(line) < 2:
+                continue
+            left = min(int(item["left"]) for item in words)
+            top = min(int(item["top"]) for item in words)
+            right = max(int(item["left"]) + int(item["width"]) for item in words)
+            bottom = max(int(item["top"]) + int(item["height"]) for item in words)
+            region = CaptureRegion(
+                origin_left + int(left / scale),
+                origin_top + int(top / scale),
+                max(80, int((right - left) / scale)),
+                max(24, int((bottom - top) / scale)),
+            )
+            blocks.append(TextBlock(line, "", region))
+        blocks.sort(key=lambda block: (block.region.top, block.region.left))
+        return blocks
 
 
 class ScreenOcrWorker(threading.Thread):
@@ -287,13 +381,33 @@ class ScreenOcrWorker(threading.Thread):
             digest = hashlib.sha1(pil.resize((96, 54)).tobytes()).hexdigest()
             if digest != self.last_hash:
                 self.last_hash = digest
-                text = self.tesseract.recognize(pil, settings["source"])
+                origin_left = int(monitor.get("left", 0))
+                origin_top = int(monitor.get("top", 0))
+                ocr_result = self.tesseract.recognize_with_blocks(pil, settings["source"], origin_left, origin_top)
+                text = ocr_result.text
                 if text and text != self.last_text:
                     self.last_text = text
                     translated = self.translator.translate(text, settings["source"], settings["target"])
+                    translated_blocks = [
+                        TextBlock(
+                            block.source,
+                            self.translator.translate(block.source, settings["source"], settings["target"]),
+                            block.region,
+                        )
+                        for block in ocr_result.blocks
+                    ]
                     elapsed = int((time.perf_counter() - started) * 1000)
                     engine_label = settings.get("ocr_engine", "Tesseract")
-                    self.output.put(Subtitle(text, translated, "screen", f"{engine_label} OCR {elapsed} ms", region))
+                    self.output.put(
+                        Subtitle(
+                            text,
+                            translated,
+                            "screen",
+                            f"{engine_label} OCR {elapsed} ms",
+                            region,
+                            translated_blocks,
+                        )
+                    )
 
             time.sleep(settings["interval"])
 
@@ -520,6 +634,8 @@ class SubtitleWindow(tk.Toplevel):
 class TextOverlayWindow(tk.Toplevel):
     def __init__(self, root: tk.Tk) -> None:
         super().__init__(root)
+        self.root = root
+        self.block_windows: list[tk.Toplevel] = []
         self.title("奶龙文字覆盖")
         self.withdraw()
         self.configure(bg="#111827")
@@ -544,6 +660,12 @@ class TextOverlayWindow(tk.Toplevel):
         self.label.bind("<Double-Button-1>", lambda _event: root.deiconify())
 
     def update_overlay(self, subtitle: Subtitle, show_original: bool) -> None:
+        if subtitle.blocks:
+            self.withdraw()
+            self._show_block_overlays(subtitle.blocks, show_original)
+            return
+
+        self.clear_block_overlays()
         region = subtitle.region
         if region is None:
             self.withdraw()
@@ -559,7 +681,50 @@ class TextOverlayWindow(tk.Toplevel):
         self.deiconify()
         self.lift()
 
+    def _show_block_overlays(self, blocks: list[TextBlock], show_original: bool) -> None:
+        self.clear_block_overlays()
+        for block in blocks[:MAX_TEXT_BLOCKS]:
+            window = tk.Toplevel(self.root)
+            window.title("奶龙文字覆盖")
+            window.configure(bg="#111827")
+            window.attributes("-topmost", True)
+            window.attributes("-alpha", 0.9)
+            window.overrideredirect(True)
+            if ICON_PATH.exists():
+                window.iconbitmap(str(ICON_PATH))
+
+            text = block.translated or block.source
+            if show_original and block.source != text:
+                text = f"{block.source}\n{text}"
+            width = max(180, min(block.region.width + 44, 760))
+            height = max(42, min(block.region.height + (54 if show_original else 34), 180))
+            label = tk.Label(
+                window,
+                text=text,
+                fg="#ffffff",
+                bg="#111827",
+                font=("Microsoft YaHei UI", 12, "bold"),
+                justify="left",
+                wraplength=width - 22,
+                padx=10,
+                pady=6,
+            )
+            label.pack(fill="both", expand=True)
+            label.bind("<Double-Button-1>", lambda _event: self.root.deiconify())
+            window.bind("<Double-Button-1>", lambda _event: self.root.deiconify())
+            x = max(0, min(block.region.left, window.winfo_screenwidth() - width))
+            y = max(0, min(block.region.top, window.winfo_screenheight() - height))
+            window.geometry(f"{width}x{height}+{x}+{y}")
+            self.block_windows.append(window)
+
+    def clear_block_overlays(self) -> None:
+        for window in self.block_windows:
+            if window.winfo_exists():
+                window.destroy()
+        self.block_windows.clear()
+
     def hide(self) -> None:
+        self.clear_block_overlays()
         self.withdraw()
 
 
@@ -800,6 +965,8 @@ class App:
     def stop(self) -> None:
         self.stop_event.set()
         self.workers = []
+        if self.text_overlay_window and self.text_overlay_window.winfo_exists():
+            self.text_overlay_window.hide()
         self.status_var.set("已停止")
 
     def show_subtitle_window(self) -> None:

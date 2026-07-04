@@ -13,6 +13,13 @@ apps\windows\build_exe.bat
 dist\windows\奶龙实时翻译.exe
 ```
 
+本机验证：
+
+```bat
+python -m py_compile apps\windows\app.py
+pytest -q tests\test_windows_ocr_blocks.py
+```
+
 ## Android
 
 推荐用 Android Studio 打开仓库根目录并运行 `apps:android`。
