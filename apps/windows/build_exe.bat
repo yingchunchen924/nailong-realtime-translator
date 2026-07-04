@@ -6,6 +6,15 @@ if not exist ".venv\Scripts\python.exe" (
 if not exist "..\..\dist\windows" (
   mkdir "..\..\dist\windows"
 )
+if not exist "build\home" (
+  mkdir "build\home"
+)
+if not exist "build\resources" (
+  mkdir "build\resources"
+)
+set "USERPROFILE=%CD%\build\home"
+set "HOME=%CD%\build\home"
+set "PYINSTALLER_CONFIG_DIR=%CD%\build\resources"
 ".venv\Scripts\pyinstaller.exe" ^
   --noconsole ^
   --onefile ^

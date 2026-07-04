@@ -15,13 +15,14 @@
 - Tesseract OCR 本地语言包。
 - OCR 引擎抽象入口，当前默认 Tesseract。
 - OCR 文字块坐标合并测试。
+- PyInstaller 本机打包已通过，产物为 `dist/windows/奶龙实时翻译.exe`。
 
 待继续：
 
 - 增加 PaddleOCR 或 Windows OCR 作为第二 OCR 引擎，提高中文/日韩准确率。
 - 继续优化文字覆盖的稳定跟踪和遮挡避让。
 - 预下载 Whisper 模型，避免第一次使用等待。
-- PyInstaller 打包成 exe。
+- 继续完善 Windows 安装包、自动更新和签名。
 
 ## Android
 

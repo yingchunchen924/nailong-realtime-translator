@@ -27,6 +27,8 @@ apps\windows\start.bat
 
 Windows 端可在设置里切换“字幕条 / 文字覆盖”。文字覆盖模式会使用 Tesseract 的行级坐标，把屏幕文字翻译成多个小浮层并放到原文字附近；“显示原文”开启时会同时显示原文和译文。
 
+Windows exe 打包产物位于 `dist\windows\奶龙实时翻译.exe`。
+
 ## Android
 
 Android 端正在按原生悬浮窗方案实现：

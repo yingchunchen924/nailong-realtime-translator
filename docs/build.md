@@ -7,6 +7,8 @@ apps\windows\install_dependencies.bat
 apps\windows\build_exe.bat
 ```
 
+脚本会把 PyInstaller 的临时用户目录和配置目录放在 `apps\windows\build` 内，避免受系统用户目录权限影响。
+
 产物位置：
 
 ```text
