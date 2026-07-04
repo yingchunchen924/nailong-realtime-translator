@@ -56,6 +56,8 @@ class WhisperHttpAudioSubtitleEngine(
     @Volatile private var inFlight = false
     @Volatile private var closed = false
     private var lastErrorNoticeAt = 0L
+    private var lastTranscript = ""
+    private var lastTranscriptAt = 0L
 
     override fun acceptPcm16(
         samples: ShortArray,
@@ -107,8 +109,10 @@ class WhisperHttpAudioSubtitleEngine(
         inFlight = true
         Thread {
             try {
-                val transcript = transcribeWav(toWav(chunk, sampleRate))
-                if (transcript.isNotBlank()) {
+                val transcript = normalizeTranscript(transcribeWav(toWav(chunk, sampleRate)))
+                if (shouldEmitTranscript(transcript)) {
+                    lastTranscript = transcript
+                    lastTranscriptAt = System.currentTimeMillis()
                     onSubtitle(AudioSubtitleResult(transcript, true))
                 }
             } catch (exc: Exception) {
@@ -124,6 +128,39 @@ class WhisperHttpAudioSubtitleEngine(
             name = "NailongWhisperTranscription"
             start()
         }
+    }
+
+    private fun normalizeTranscript(text: String): String {
+        return text.lineSequence()
+            .map { it.trim().replace(Regex("\\s+"), " ") }
+            .filter { it.isNotEmpty() }
+            .joinToString(" ")
+            .trim()
+    }
+
+    private fun shouldEmitTranscript(text: String): Boolean {
+        if (text.length < MIN_TRANSCRIPT_LENGTH) return false
+        if (isLikelyNonSpeechCaption(text)) return false
+        val now = System.currentTimeMillis()
+        if (text == lastTranscript && now - lastTranscriptAt < DUPLICATE_TRANSCRIPT_SUPPRESS_MS) {
+            return false
+        }
+        return true
+    }
+
+    private fun isLikelyNonSpeechCaption(text: String): Boolean {
+        val normalized = text.trim().lowercase().trim('.', '。', '!', '！', '?', '？')
+        return normalized in setOf(
+            "[music]",
+            "(music)",
+            "music",
+            "[silence]",
+            "(silence)",
+            "silence",
+            "字幕",
+            "谢谢观看",
+            "感谢观看"
+        )
     }
 
     private fun transcribeWav(wav: ByteArray): String {
@@ -221,5 +258,7 @@ class WhisperHttpAudioSubtitleEngine(
         private const val DEFAULT_SAMPLE_RATE = 16000
         private const val CHUNK_SAMPLE_RATE_SECONDS = 5
         private const val ERROR_NOTICE_INTERVAL_MS = 8000L
+        private const val MIN_TRANSCRIPT_LENGTH = 2
+        private const val DUPLICATE_TRANSCRIPT_SUPPRESS_MS = 12000L
     }
 }

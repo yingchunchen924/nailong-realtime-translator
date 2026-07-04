@@ -41,6 +41,7 @@
 - 文字覆盖模式：把 OCR 识别到的最多 10 个屏幕文字块翻译后显示到原位置附近，并减少同一画面重复重建造成的闪烁。
 - 前台通知“停止”按钮，能关闭后台翻译、音频捕获和悬浮层。
 - Android debug APK 本机构建通过。
+- 底部字幕栏加入音频字幕优先、重复字幕过滤和状态提示限频，减少音频/屏幕识别同时运行时的闪烁和互相覆盖。
 
 待继续：
 
@@ -59,7 +60,7 @@ yingchunchen924/nailong-realtime-translator
 
 当前 `main` 分支已成功推送到 GitHub。仓库包含 Windows 和 Android 的 GitHub Actions 构建流程。
 
-`v0.1.2` 发布流程已通过，Release 已生成：
+当前发布版 `v0.1.3` 的 Release 包包含：
 
 - `nailong-android-debug.zip`
 - `nailong-windows.zip`

@@ -37,9 +37,9 @@ Windows exe 打包产物位于 `dist\windows\奶龙实时翻译.exe`。
 - `nailong-windows.zip`
 - `nailong-realtime-translator-source.zip`
 
-当前发布版：`v0.1.2`
+当前发布版：`v0.1.3`
 
-下载地址：https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.2
+下载地址：https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.3
 
 普通用户安装说明见 `docs/download.md`。
 

@@ -65,6 +65,9 @@ class FloatingTranslateService : Service() {
     private var lastOcrAt = 0L
     private var lastText = ""
     private var lastTextOverlaySignature = ""
+    private var lastPublishedSubtitle = ""
+    private var lastPublishedAt = 0L
+    private var audioSubtitleHoldUntil = 0L
     private var targetLanguage = LANG_CHINESE
     private var showOriginal = false
     private var textOverlayMode = false
@@ -88,7 +91,7 @@ class FloatingTranslateService : Service() {
         textOverlayMode = intent?.takeIf { it.hasExtra(EXTRA_TEXT_OVERLAY_MODE) }?.getBooleanExtra(EXTRA_TEXT_OVERLAY_MODE, false)
             ?: savedTextOverlayMode()
         configureAudioSubtitleEngine(intent)
-        showOverlay("奶龙实时翻译已在后台运行")
+        publishSubtitle("奶龙实时翻译已在后台运行", SubtitleSource.SYSTEM, force = true)
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent?.getParcelableExtra(EXTRA_RESULT_DATA, Intent::class.java)
@@ -148,10 +151,9 @@ class FloatingTranslateService : Service() {
         return preferences.getBoolean(AppSettings.KEY_TEXT_OVERLAY_MODE, false)
     }
 
-    private fun showOverlay(text: String) {
+    private fun ensureOverlay(text: String) {
         if (!Settings.canDrawOverlays(this)) return
         if (overlayView != null) {
-            overlayView?.text = text
             return
         }
 
@@ -181,6 +183,38 @@ class FloatingTranslateService : Service() {
 
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         windowManager.addView(overlayView, params)
+    }
+
+    private fun publishSubtitle(
+        text: String,
+        source: SubtitleSource,
+        force: Boolean = false
+    ) {
+        val displayText = normalizeSubtitleText(text)
+        if (displayText.isBlank() || !Settings.canDrawOverlays(this)) return
+
+        val now = System.currentTimeMillis()
+        if (!force) {
+            if (source == SubtitleSource.SCREEN && now < audioSubtitleHoldUntil) return
+            if (source == SubtitleSource.SYSTEM && now - lastPublishedAt < STATUS_SUPPRESS_MS) return
+            if (displayText == lastPublishedSubtitle && now - lastPublishedAt < DUPLICATE_SUPPRESS_MS) return
+        }
+
+        ensureOverlay(displayText)
+        overlayView?.text = displayText
+        lastPublishedSubtitle = displayText
+        lastPublishedAt = now
+        if (source == SubtitleSource.AUDIO) {
+            audioSubtitleHoldUntil = now + AUDIO_SUBTITLE_HOLD_MS
+        }
+    }
+
+    private fun normalizeSubtitleText(text: String): String {
+        return text.lineSequence()
+            .map { it.trim().replace(Regex("\\s+"), " ") }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
+            .trim()
     }
 
     private fun startProjection(resultCode: Int, data: Intent) {
@@ -264,9 +298,9 @@ class FloatingTranslateService : Service() {
                     audioSubtitleEngine.acceptPcm16(buffer, read, AUDIO_SAMPLE_RATE) { result ->
                         mainHandler.post {
                             if (result.isTranscript) {
-                                translateText(result.text)
+                                translateText(result.text, SubtitleSource.AUDIO)
                             } else {
-                                overlayView?.text = result.text
+                                publishSubtitle(result.text, SubtitleSource.SYSTEM)
                             }
                         }
                     }
@@ -274,7 +308,7 @@ class FloatingTranslateService : Service() {
             }
         } catch (_: SecurityException) {
             mainHandler.post {
-                overlayView?.text = "音频捕获权限不足，请重新授权录音和屏幕捕获"
+                publishSubtitle("音频捕获权限不足，请重新授权录音和屏幕捕获", SubtitleSource.SYSTEM, force = true)
             }
         } finally {
             runCatching { recorder.stop() }
@@ -321,7 +355,7 @@ class FloatingTranslateService : Service() {
                         showTextBlockOverlays(result.textBlocks)
                     } else if (text != lastText) {
                         lastText = text
-                        translateText(text)
+                        translateText(text, SubtitleSource.SCREEN)
                     }
                     isRecognizing = false
                 } else {
@@ -333,12 +367,12 @@ class FloatingTranslateService : Service() {
             }
     }
 
-    private fun translateText(text: String) {
+    private fun translateText(text: String, source: SubtitleSource) {
         translateTextForDisplay(
             text,
-            onProgress = { overlayView?.text = it }
+            onProgress = { publishSubtitle(it, source) }
         ) { translated ->
-            overlayView?.text = translated
+            publishSubtitle(translated, source)
         }
     }
 
@@ -601,6 +635,12 @@ class FloatingTranslateService : Service() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private enum class SubtitleSource {
+        SYSTEM,
+        SCREEN,
+        AUDIO
+    }
+
     companion object {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
@@ -623,6 +663,9 @@ class FloatingTranslateService : Service() {
         private const val OCR_INTERVAL_MS = 1200L
         private const val MIN_TEXT_LENGTH = 2
         private const val MAX_TEXT_BLOCK_OVERLAYS = 10
+        private const val AUDIO_SUBTITLE_HOLD_MS = 6500L
+        private const val DUPLICATE_SUPPRESS_MS = 2500L
+        private const val STATUS_SUPPRESS_MS = 5000L
         private const val AUDIO_SAMPLE_RATE = 16000
         private const val AUDIO_ACTIVITY_THRESHOLD = 0.015
     }
