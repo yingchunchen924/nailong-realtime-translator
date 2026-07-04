@@ -16,6 +16,8 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
+    private var targetLanguage = FloatingTranslateService.LANG_CHINESE
+    private lateinit var targetButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +48,10 @@ class MainActivity : Activity() {
             text = "授权悬浮字幕"
             setOnClickListener { requestOverlayPermission() }
         }
+        targetButton = Button(this).apply {
+            text = "目标语言：中文"
+            setOnClickListener { toggleTargetLanguage() }
+        }
         val screenButton = Button(this).apply {
             text = "开始屏幕/音频翻译"
             setOnClickListener { requestProjection() }
@@ -58,6 +64,7 @@ class MainActivity : Activity() {
         root.addView(title)
         root.addView(subtitle)
         root.addView(overlayButton, buttonParams())
+        root.addView(targetButton, buttonParams())
         root.addView(screenButton, buttonParams())
         root.addView(stopButton, buttonParams())
         setContentView(root)
@@ -94,6 +101,19 @@ class MainActivity : Activity() {
         startActivityForResult(projectionManager.createScreenCaptureIntent(), REQUEST_PROJECTION)
     }
 
+    private fun toggleTargetLanguage() {
+        targetLanguage = if (targetLanguage == FloatingTranslateService.LANG_CHINESE) {
+            FloatingTranslateService.LANG_ENGLISH
+        } else {
+            FloatingTranslateService.LANG_CHINESE
+        }
+        targetButton.text = if (targetLanguage == FloatingTranslateService.LANG_CHINESE) {
+            "目标语言：中文"
+        } else {
+            "目标语言：英语"
+        }
+    }
+
     @Deprecated("Android framework callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -101,6 +121,7 @@ class MainActivity : Activity() {
             val serviceIntent = Intent(this, FloatingTranslateService::class.java).apply {
                 putExtra(FloatingTranslateService.EXTRA_RESULT_CODE, resultCode)
                 putExtra(FloatingTranslateService.EXTRA_RESULT_DATA, data)
+                putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, targetLanguage)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)

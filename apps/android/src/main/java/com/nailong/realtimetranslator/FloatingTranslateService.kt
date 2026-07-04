@@ -23,6 +23,11 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
+import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.Translation
+import com.google.mlkit.nl.translate.Translator
+import com.google.mlkit.nl.translate.TranslatorOptions
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
@@ -41,9 +46,11 @@ class FloatingTranslateService : Service() {
     private val chineseRecognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
     private val japaneseRecognizer by lazy { TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build()) }
     private val koreanRecognizer by lazy { TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build()) }
+    private val translators = mutableMapOf<String, Translator>()
     private var isRecognizing = false
     private var lastOcrAt = 0L
     private var lastText = ""
+    private var targetLanguage = LANG_CHINESE
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -54,6 +61,7 @@ class FloatingTranslateService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: targetLanguage
         showOverlay("奶龙实时翻译已在后台运行")
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -162,7 +170,7 @@ class FloatingTranslateService : Service() {
                 if (text.length >= MIN_TEXT_LENGTH) {
                     if (text != lastText) {
                         lastText = text
-                        overlayView?.text = text
+                        translateText(text)
                     }
                     isRecognizing = false
                 } else {
@@ -172,6 +180,55 @@ class FloatingTranslateService : Service() {
             .addOnFailureListener {
                 recognizeWithFallbacks(image, recognizers, index + 1)
             }
+    }
+
+    private fun translateText(text: String) {
+        val sourceLanguage = guessSourceLanguage(text)
+        val target = when (targetLanguage) {
+            LANG_ENGLISH -> TranslateLanguage.ENGLISH
+            else -> TranslateLanguage.CHINESE
+        }
+        if (sourceLanguage == target) {
+            overlayView?.text = text
+            return
+        }
+        val translator = translatorFor(sourceLanguage, target)
+        val conditions = DownloadConditions.Builder().build()
+        overlayView?.text = "$text\n正在准备翻译模型..."
+        translator.downloadModelIfNeeded(conditions)
+            .addOnSuccessListener {
+                translator.translate(text)
+                    .addOnSuccessListener { translated ->
+                        overlayView?.text = translated
+                    }
+                    .addOnFailureListener {
+                        overlayView?.text = text
+                    }
+            }
+            .addOnFailureListener {
+                overlayView?.text = text
+            }
+    }
+
+    private fun translatorFor(source: String, target: String): Translator {
+        val key = "$source->$target"
+        return translators.getOrPut(key) {
+            val options = TranslatorOptions.Builder()
+                .setSourceLanguage(source)
+                .setTargetLanguage(target)
+                .build()
+            Translation.getClient(options)
+        }
+    }
+
+    private fun guessSourceLanguage(text: String): String {
+        return when {
+            text.any { it in '\u4e00'..'\u9fff' } -> TranslateLanguage.CHINESE
+            text.any { it in '\u3040'..'\u30ff' } -> TranslateLanguage.JAPANESE
+            text.any { it in '\uac00'..'\ud7af' } -> TranslateLanguage.KOREAN
+            text.any { it in '\u0400'..'\u04ff' } -> TranslateLanguage.RUSSIAN
+            else -> TranslateLanguage.ENGLISH
+        }
     }
 
     private fun Image.toBitmap(): Bitmap? {
@@ -228,6 +285,7 @@ class FloatingTranslateService : Service() {
         chineseRecognizer.close()
         japaneseRecognizer.close()
         koreanRecognizer.close()
+        translators.values.forEach { it.close() }
         overlayView?.let {
             (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
         }
@@ -239,6 +297,9 @@ class FloatingTranslateService : Service() {
     companion object {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
+        const val EXTRA_TARGET_LANGUAGE = "target_language"
+        const val LANG_CHINESE = "zh"
+        const val LANG_ENGLISH = "en"
         private const val CHANNEL_ID = "nailong_translate"
         private const val NOTIFICATION_ID = 1001
         private const val OCR_INTERVAL_MS = 1200L
