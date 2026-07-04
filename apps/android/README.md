@@ -10,13 +10,11 @@
 - 使用 MediaProjection 请求屏幕捕获权限。
 - 启动前台服务后台运行。
 - 使用 WindowManager 在屏幕底部显示一行悬浮字幕。
+- 使用 ML Kit 对屏幕帧进行中文、日文、韩文、拉丁文字 OCR。
 
 ## 后续识别引擎
 
-屏幕文字建议接入：
-
-- ML Kit Text Recognition v2
-- 或 PaddleOCR Android
+屏幕文字已接入 ML Kit Text Recognition v2。复杂排版、游戏字幕和中文准确率后续可继续评估 PaddleOCR Android。
 
 音频字幕建议接入：
 

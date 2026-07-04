@@ -13,10 +13,11 @@
 - 屏幕区域框选。
 - 系统播放音频 loopback 设备选择。
 - Tesseract OCR 本地语言包。
+- OCR 引擎抽象入口，当前默认 Tesseract。
 
 待继续：
 
-- 中文/日韩 OCR 替换为 PaddleOCR 或 Windows OCR。
+- 增加 PaddleOCR 或 Windows OCR 作为第二 OCR 引擎，提高中文/日韩准确率。
 - 文本覆盖从区域级提升到逐行/逐块坐标。
 - 预下载 Whisper 模型，避免第一次使用等待。
 - PyInstaller 打包成 exe。
@@ -31,11 +32,13 @@
 - MediaProjection 屏幕捕获授权入口。
 - Foreground Service 后台运行。
 - 屏幕底部一行悬浮字幕。
+- ML Kit 屏幕帧 OCR：中文、日文、韩文、拉丁文字。
 
 待继续：
 
 - 安装 Android SDK 并构建 APK。
-- 接入 ML Kit / PaddleOCR。
+- 把 ML Kit OCR 结果接入翻译服务。
+- 评估 PaddleOCR Android 作为复杂场景增强。
 - 接入音频捕获/语音识别。
 
 ## GitHub

@@ -7,9 +7,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.Image
 import android.media.ImageReader
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
@@ -21,6 +23,13 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 
 class FloatingTranslateService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -28,6 +37,13 @@ class FloatingTranslateService : Service() {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+    private val latinRecognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val chineseRecognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
+    private val japaneseRecognizer by lazy { TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build()) }
+    private val koreanRecognizer by lazy { TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build()) }
+    private var isRecognizing = false
+    private var lastOcrAt = 0L
+    private var lastText = ""
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,12 +125,65 @@ class FloatingTranslateService : Service() {
         )
         imageReader?.setOnImageAvailableListener({ reader ->
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
-            image.close()
-            mainHandler.post {
-                // TODO: send the frame to ML Kit or PaddleOCR, then render translated text.
-                overlayView?.text = "正在检测屏幕文字和播放音频..."
+            val now = System.currentTimeMillis()
+            if (isRecognizing || now - lastOcrAt < OCR_INTERVAL_MS) {
+                image.close()
+                return@setOnImageAvailableListener
             }
+            lastOcrAt = now
+            isRecognizing = true
+            recognizeScreenImage(image)
         }, mainHandler)
+    }
+
+    private fun recognizeScreenImage(image: Image) {
+        val bitmap = image.toBitmap()
+        image.close()
+        if (bitmap == null) {
+            isRecognizing = false
+            return
+        }
+        val inputImage = InputImage.fromBitmap(bitmap, 0)
+        recognizeWithFallbacks(inputImage, listOf(chineseRecognizer, japaneseRecognizer, koreanRecognizer, latinRecognizer), 0)
+    }
+
+    private fun recognizeWithFallbacks(image: InputImage, recognizers: List<TextRecognizer>, index: Int) {
+        if (index >= recognizers.size) {
+            isRecognizing = false
+            return
+        }
+        recognizers[index].process(image)
+            .addOnSuccessListener { result ->
+                val text = result.text.lineSequence()
+                    .map { it.trim() }
+                    .filter { it.isNotEmpty() }
+                    .take(3)
+                    .joinToString(" ")
+                if (text.length >= MIN_TEXT_LENGTH) {
+                    if (text != lastText) {
+                        lastText = text
+                        overlayView?.text = text
+                    }
+                    isRecognizing = false
+                } else {
+                    recognizeWithFallbacks(image, recognizers, index + 1)
+                }
+            }
+            .addOnFailureListener {
+                recognizeWithFallbacks(image, recognizers, index + 1)
+            }
+    }
+
+    private fun Image.toBitmap(): Bitmap? {
+        val plane = planes.firstOrNull() ?: return null
+        val buffer = plane.buffer
+        val pixelStride = plane.pixelStride
+        val rowStride = plane.rowStride
+        val rowPadding = rowStride - pixelStride * width
+        val bitmapWidth = width + rowPadding / pixelStride
+        val bitmap = Bitmap.createBitmap(bitmapWidth, height, Bitmap.Config.ARGB_8888)
+        bitmap.copyPixelsFromBuffer(buffer)
+        return Bitmap.createBitmap(bitmap, 0, 0, width, height)
     }
 
     private fun createNotificationChannel() {
@@ -155,6 +224,10 @@ class FloatingTranslateService : Service() {
         virtualDisplay?.release()
         imageReader?.close()
         mediaProjection?.stop()
+        latinRecognizer.close()
+        chineseRecognizer.close()
+        japaneseRecognizer.close()
+        koreanRecognizer.close()
         overlayView?.let {
             (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
         }
@@ -168,5 +241,7 @@ class FloatingTranslateService : Service() {
         const val EXTRA_RESULT_DATA = "result_data"
         private const val CHANNEL_ID = "nailong_translate"
         private const val NOTIFICATION_ID = 1001
+        private const val OCR_INTERVAL_MS = 1200L
+        private const val MIN_TEXT_LENGTH = 2
     }
 }

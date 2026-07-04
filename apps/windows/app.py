@@ -186,69 +186,17 @@ class Translator:
         return f"待翻译：{text}"
 
 
-class ScreenOcrWorker(threading.Thread):
-    def __init__(
-        self,
-        engines: OptionalEngines,
-        translator: Translator,
-        output: queue.Queue,
-        stop_event: threading.Event,
-        settings_getter,
-    ) -> None:
-        super().__init__(daemon=True)
+class TesseractOcrEngine:
+    def __init__(self, engines: OptionalEngines) -> None:
         self.engines = engines
-        self.translator = translator
-        self.output = output
-        self.stop_event = stop_event
-        self.settings_getter = settings_getter
-        self.last_hash = ""
-        self.last_text = ""
 
-    def run(self) -> None:
+    def is_available(self) -> bool:
+        return bool(self.engines.pytesseract)
+
+    def recognize(self, image: Image.Image, source_lang: str) -> str:
         if not self.engines.mss or not self.engines.pytesseract:
-            self.output.put(
-                Subtitle(
-                    "屏幕文字识别依赖未安装",
-                    "请安装 mss、pytesseract 和 Tesseract OCR 后再启用屏幕翻译。",
-                    "screen",
-                    "等待依赖",
-                )
-            )
-            return
+            return "OCR 依赖未安装"
 
-        try:
-            sct = self.engines.mss.mss()
-        except Exception as exc:
-            self.output.put(Subtitle("屏幕捕获失败", str(exc), "screen", "错误"))
-            return
-
-        while not self.stop_event.is_set():
-            settings = self.settings_getter()
-            region = settings["region"]
-            monitor = region.to_mss() if region else sct.monitors[1]
-            started = time.perf_counter()
-
-            try:
-                image = sct.grab(monitor)
-                pil = Image.frombytes("RGB", image.size, image.rgb)
-            except Exception as exc:
-                self.output.put(Subtitle("屏幕捕获失败", str(exc), "screen", "错误"))
-                time.sleep(settings["interval"])
-                continue
-
-            digest = hashlib.sha1(pil.resize((96, 54)).tobytes()).hexdigest()
-            if digest != self.last_hash:
-                self.last_hash = digest
-                text = self._ocr(pil, settings["source"])
-                if text and text != self.last_text:
-                    self.last_text = text
-                    translated = self.translator.translate(text, settings["source"], settings["target"])
-                    elapsed = int((time.perf_counter() - started) * 1000)
-                    self.output.put(Subtitle(text, translated, "screen", f"OCR {elapsed} ms", region))
-
-            time.sleep(settings["interval"])
-
-    def _ocr(self, image: Image.Image, source_lang: str) -> str:
         max_side = 1800
         if max(image.size) < max_side:
             scale = min(2.0, max_side / max(1, max(image.size)))
@@ -283,6 +231,71 @@ class ScreenOcrWorker(threading.Thread):
                 best_text = text
                 best_score = score
         return best_text
+
+
+class ScreenOcrWorker(threading.Thread):
+    def __init__(
+        self,
+        engines: OptionalEngines,
+        translator: Translator,
+        output: queue.Queue,
+        stop_event: threading.Event,
+        settings_getter,
+    ) -> None:
+        super().__init__(daemon=True)
+        self.engines = engines
+        self.translator = translator
+        self.output = output
+        self.stop_event = stop_event
+        self.settings_getter = settings_getter
+        self.last_hash = ""
+        self.last_text = ""
+        self.tesseract = TesseractOcrEngine(engines)
+
+    def run(self) -> None:
+        if not self.engines.mss or not self.tesseract.is_available():
+            self.output.put(
+                Subtitle(
+                    "屏幕文字识别依赖未安装",
+                    "请安装 mss、pytesseract 和 Tesseract OCR 后再启用屏幕翻译。",
+                    "screen",
+                    "等待依赖",
+                )
+            )
+            return
+
+        try:
+            sct = self.engines.mss.mss()
+        except Exception as exc:
+            self.output.put(Subtitle("屏幕捕获失败", str(exc), "screen", "错误"))
+            return
+
+        while not self.stop_event.is_set():
+            settings = self.settings_getter()
+            region = settings["region"]
+            monitor = region.to_mss() if region else sct.monitors[1]
+            started = time.perf_counter()
+
+            try:
+                image = sct.grab(monitor)
+                pil = Image.frombytes("RGB", image.size, image.rgb)
+            except Exception as exc:
+                self.output.put(Subtitle("屏幕捕获失败", str(exc), "screen", "错误"))
+                time.sleep(settings["interval"])
+                continue
+
+            digest = hashlib.sha1(pil.resize((96, 54)).tobytes()).hexdigest()
+            if digest != self.last_hash:
+                self.last_hash = digest
+                text = self.tesseract.recognize(pil, settings["source"])
+                if text and text != self.last_text:
+                    self.last_text = text
+                    translated = self.translator.translate(text, settings["source"], settings["target"])
+                    elapsed = int((time.perf_counter() - started) * 1000)
+                    engine_label = settings.get("ocr_engine", "Tesseract")
+                    self.output.put(Subtitle(text, translated, "screen", f"{engine_label} OCR {elapsed} ms", region))
+
+            time.sleep(settings["interval"])
 
 
 class AudioSubtitleWorker(threading.Thread):
@@ -576,6 +589,7 @@ class App:
         self.display_mode_var = tk.StringVar(value="字幕条")
         self.interval_var = tk.DoubleVar(value=1.2)
         self.whisper_model_var = tk.StringVar(value="tiny")
+        self.ocr_engine_var = tk.StringVar(value="Tesseract")
         self.audio_device_var = tk.StringVar(value="系统默认")
         self.region_var = tk.StringVar(value="屏幕区域：全屏")
         self.status_var = tk.StringVar(value="准备就绪")
@@ -674,6 +688,15 @@ class App:
             width=18,
         ).grid(row=4, column=1, sticky="w", pady=(16, 0))
 
+        ttk.Label(controls, text="OCR 引擎").grid(row=4, column=2, sticky="e", padx=(14, 8), pady=(16, 0))
+        ttk.Combobox(
+            controls,
+            textvariable=self.ocr_engine_var,
+            values=["Tesseract"],
+            state="readonly",
+            width=18,
+        ).grid(row=4, column=3, columnspan=2, sticky="w", pady=(16, 0))
+
         controls.columnconfigure(2, weight=1)
 
         region_box = ttk.LabelFrame(shell, text="屏幕区域", padding=16)
@@ -715,6 +738,7 @@ class App:
             "audio_device": self.audio_device_var.get(),
             "show_original": self.show_original_var.get(),
             "display_mode": self.display_mode_var.get(),
+            "ocr_engine": self.ocr_engine_var.get(),
         }
 
     def audio_device_options(self) -> list[str]:

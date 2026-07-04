@@ -32,4 +32,5 @@ Android 端正在按原生悬浮窗方案实现：
 - MediaProjection 捕获屏幕文字。
 - Foreground Service 后台运行。
 - WindowManager 显示一行字幕/文字覆盖。
-- 后续接入 ML Kit / PaddleOCR / Whisper API 或端侧语音识别。
+- ML Kit 识别屏幕帧文字，当前先显示识别原文。
+- 后续接入翻译服务、音频捕获、Whisper API 或端侧语音识别。
