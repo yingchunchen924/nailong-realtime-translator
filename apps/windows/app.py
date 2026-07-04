@@ -105,6 +105,25 @@ class TextBlock:
     region: CaptureRegion
 
 
+def text_block_overlay_signature(blocks: list[TextBlock], show_original: bool) -> str:
+    parts = [f"show_original={int(show_original)}"]
+    for block in blocks[:MAX_TEXT_BLOCKS]:
+        text = block.translated or block.source
+        parts.append(
+            "|".join(
+                (
+                    str(block.region.left // 8),
+                    str(block.region.top // 8),
+                    str(block.region.width // 8),
+                    str(block.region.height // 8),
+                    block.source.strip(),
+                    text.strip(),
+                )
+            )
+        )
+    return "\n".join(parts)
+
+
 @dataclass
 class OcrResult:
     text: str
@@ -636,6 +655,7 @@ class TextOverlayWindow(tk.Toplevel):
         super().__init__(root)
         self.root = root
         self.block_windows: list[tk.Toplevel] = []
+        self.block_overlay_signature = ""
         self.title("奶龙文字覆盖")
         self.withdraw()
         self.configure(bg="#111827")
@@ -682,7 +702,11 @@ class TextOverlayWindow(tk.Toplevel):
         self.lift()
 
     def _show_block_overlays(self, blocks: list[TextBlock], show_original: bool) -> None:
-        self.clear_block_overlays()
+        signature = text_block_overlay_signature(blocks, show_original)
+        if signature == self.block_overlay_signature:
+            return
+        self.block_overlay_signature = signature
+        self.clear_block_overlays(reset_signature=False)
         for block in blocks[:MAX_TEXT_BLOCKS]:
             window = tk.Toplevel(self.root)
             window.title("奶龙文字覆盖")
@@ -717,7 +741,9 @@ class TextOverlayWindow(tk.Toplevel):
             window.geometry(f"{width}x{height}+{x}+{y}")
             self.block_windows.append(window)
 
-    def clear_block_overlays(self) -> None:
+    def clear_block_overlays(self, reset_signature: bool = True) -> None:
+        if reset_signature:
+            self.block_overlay_signature = ""
         for window in self.block_windows:
             if window.winfo_exists():
                 window.destroy()

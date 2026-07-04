@@ -38,3 +38,24 @@ def test_line_blocks_from_tesseract_data_are_scaled_and_grouped():
     assert blocks[0].region.height == 24
     assert blocks[1].region.left == 106
     assert blocks[1].region.top == 225
+
+
+def test_text_block_overlay_signature_ignores_tiny_position_jitter():
+    app = load_windows_app()
+
+    first = [
+        app.TextBlock("Hello", "你好", app.CaptureRegion(100, 200, 160, 30)),
+        app.TextBlock("World", "世界", app.CaptureRegion(100, 240, 160, 30)),
+    ]
+    jittered = [
+        app.TextBlock("Hello", "你好", app.CaptureRegion(103, 205, 160, 30)),
+        app.TextBlock("World", "世界", app.CaptureRegion(101, 246, 160, 30)),
+    ]
+    changed = [
+        app.TextBlock("Hello", "你好", app.CaptureRegion(100, 200, 160, 30)),
+        app.TextBlock("World!", "世界", app.CaptureRegion(100, 240, 160, 30)),
+    ]
+
+    assert app.text_block_overlay_signature(first, False) == app.text_block_overlay_signature(jittered, False)
+    assert app.text_block_overlay_signature(first, False) != app.text_block_overlay_signature(first, True)
+    assert app.text_block_overlay_signature(first, False) != app.text_block_overlay_signature(changed, False)
