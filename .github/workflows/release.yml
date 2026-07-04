@@ -87,7 +87,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
-          Compress-Archive -LiteralPath dist/windows/* -DestinationPath release/nailong-windows.zip -Force
+          Compress-Archive -Path dist/windows/* -DestinationPath release/nailong-windows.zip -Force
 
       - name: Upload Windows package
         uses: actions/upload-artifact@v4
