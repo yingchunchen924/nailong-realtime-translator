@@ -64,6 +64,7 @@ class FloatingTranslateService : Service() {
     private var isRecognizing = false
     private var lastOcrAt = 0L
     private var lastText = ""
+    private var lastTextOverlaySignature = ""
     private var targetLanguage = LANG_CHINESE
     private var showOriginal = false
     private var textOverlayMode = false
@@ -422,33 +423,39 @@ class FloatingTranslateService : Service() {
 
     private fun showTextBlockOverlays(blocks: List<Text.TextBlock>) {
         if (!Settings.canDrawOverlays(this)) return
-        clearTextBlockOverlays()
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val metrics = resources.displayMetrics
-        blocks.asSequence()
+        val candidates = blocks.asSequence()
             .mapNotNull { block ->
                 val box = block.boundingBox ?: return@mapNotNull null
                 if (block.text.trim().length < MIN_TEXT_LENGTH) return@mapNotNull null
                 block to box
             }
-            .sortedBy { (_, box) -> box.top }
+            .sortedWith(compareBy<Pair<Text.TextBlock, Rect>> { it.second.top }.thenBy { it.second.left })
             .take(MAX_TEXT_BLOCK_OVERLAYS)
-            .forEach { (block, box) ->
-                val view = TextView(this).apply {
-                    text = if (showOriginal) block.text.trim() else "翻译中..."
-                    textSize = 13f
-                    setTextColor(0xffffffff.toInt())
-                    setBackgroundResource(com.nailong.realtimetranslator.R.drawable.subtitle_bg)
-                    setPadding(dp(6), dp(4), dp(6), dp(4))
-                    maxLines = if (showOriginal) 3 else 2
-                }
-                val params = textBlockLayoutParams(box, metrics.widthPixels, metrics.heightPixels)
-                windowManager.addView(view, params)
-                textOverlayViews.add(view)
-                translateTextForDisplay(block.text.trim()) { translated ->
-                    view.text = translated
-                }
+            .toList()
+        val signature = candidates.joinToString("|") { (block, box) ->
+            "${box.left / 8},${box.top / 8},${box.width() / 8},${box.height() / 8}:${block.text.trim()}"
+        }
+        if (signature == lastTextOverlaySignature) return
+        lastTextOverlaySignature = signature
+        clearTextBlockOverlays(resetSignature = false)
+        candidates.forEach { (block, box) ->
+            val view = TextView(this).apply {
+                text = if (showOriginal) block.text.trim() else "翻译中..."
+                textSize = 13f
+                setTextColor(0xffffffff.toInt())
+                setBackgroundResource(com.nailong.realtimetranslator.R.drawable.subtitle_bg)
+                setPadding(dp(6), dp(4), dp(6), dp(4))
+                maxLines = if (showOriginal) 3 else 2
             }
+            val params = textBlockLayoutParams(box, metrics.widthPixels, metrics.heightPixels)
+            windowManager.addView(view, params)
+            textOverlayViews.add(view)
+            translateTextForDisplay(block.text.trim()) { translated ->
+                view.text = translated
+            }
+        }
     }
 
     private fun textBlockLayoutParams(
@@ -473,7 +480,8 @@ class FloatingTranslateService : Service() {
         }
     }
 
-    private fun clearTextBlockOverlays() {
+    private fun clearTextBlockOverlays(resetSignature: Boolean = true) {
+        if (resetSignature) lastTextOverlaySignature = ""
         if (textOverlayViews.isEmpty()) return
         val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         textOverlayViews.forEach { view ->
@@ -609,7 +617,7 @@ class FloatingTranslateService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val OCR_INTERVAL_MS = 1200L
         private const val MIN_TEXT_LENGTH = 2
-        private const val MAX_TEXT_BLOCK_OVERLAYS = 6
+        private const val MAX_TEXT_BLOCK_OVERLAYS = 10
         private const val AUDIO_SAMPLE_RATE = 16000
         private const val AUDIO_ACTIVITY_THRESHOLD = 0.015
     }
