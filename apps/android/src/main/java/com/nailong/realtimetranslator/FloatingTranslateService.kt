@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
@@ -35,6 +36,7 @@ import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.Translator
 import com.google.mlkit.nl.translate.TranslatorOptions
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
@@ -45,6 +47,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 class FloatingTranslateService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var overlayView: TextView? = null
+    private val textOverlayViews = mutableListOf<TextView>()
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
@@ -63,6 +66,7 @@ class FloatingTranslateService : Service() {
     private var lastText = ""
     private var targetLanguage = LANG_CHINESE
     private var showOriginal = false
+    private var textOverlayMode = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -76,6 +80,8 @@ class FloatingTranslateService : Service() {
         targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: savedTargetLanguage()
         showOriginal = intent?.takeIf { it.hasExtra(EXTRA_SHOW_ORIGINAL) }?.getBooleanExtra(EXTRA_SHOW_ORIGINAL, false)
             ?: savedShowOriginal()
+        textOverlayMode = intent?.takeIf { it.hasExtra(EXTRA_TEXT_OVERLAY_MODE) }?.getBooleanExtra(EXTRA_TEXT_OVERLAY_MODE, false)
+            ?: savedTextOverlayMode()
         configureAudioSubtitleEngine(intent)
         showOverlay("奶龙实时翻译已在后台运行")
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
@@ -126,6 +132,11 @@ class FloatingTranslateService : Service() {
     private fun savedShowOriginal(): Boolean {
         val preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
         return preferences.getBoolean(AppSettings.KEY_SHOW_ORIGINAL, false)
+    }
+
+    private fun savedTextOverlayMode(): Boolean {
+        val preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        return preferences.getBoolean(AppSettings.KEY_TEXT_OVERLAY_MODE, false)
     }
 
     private fun showOverlay(text: String) {
@@ -276,6 +287,7 @@ class FloatingTranslateService : Service() {
         image.close()
         if (bitmap == null) {
             isRecognizing = false
+            clearTextBlockOverlays()
             return
         }
         val inputImage = InputImage.fromBitmap(bitmap, 0)
@@ -285,6 +297,7 @@ class FloatingTranslateService : Service() {
     private fun recognizeWithFallbacks(image: InputImage, recognizers: List<TextRecognizer>, index: Int) {
         if (index >= recognizers.size) {
             isRecognizing = false
+            clearTextBlockOverlays()
             return
         }
         recognizers[index].process(image)
@@ -295,7 +308,9 @@ class FloatingTranslateService : Service() {
                     .take(3)
                     .joinToString(" ")
                 if (text.length >= MIN_TEXT_LENGTH) {
-                    if (text != lastText) {
+                    if (textOverlayMode) {
+                        showTextBlockOverlays(result.textBlocks)
+                    } else if (text != lastText) {
                         lastText = text
                         translateText(text)
                     }
@@ -310,32 +325,50 @@ class FloatingTranslateService : Service() {
     }
 
     private fun translateText(text: String) {
-        identifySourceLanguage(text) { sourceLanguage ->
-            translateFromSource(text, sourceLanguage)
+        translateTextForDisplay(
+            text,
+            onProgress = { overlayView?.text = it }
+        ) { translated ->
+            overlayView?.text = translated
         }
     }
 
-    private fun translateFromSource(text: String, sourceLanguage: String) {
+    private fun translateTextForDisplay(
+        text: String,
+        onProgress: ((String) -> Unit)? = null,
+        onTranslated: (String) -> Unit
+    ) {
+        identifySourceLanguage(text) { sourceLanguage ->
+            translateFromSource(text, sourceLanguage, onProgress, onTranslated)
+        }
+    }
+
+    private fun translateFromSource(
+        text: String,
+        sourceLanguage: String,
+        onProgress: ((String) -> Unit)?,
+        onTranslated: (String) -> Unit
+    ) {
         val target = targetLanguage.toMlKitLanguage()
         if (sourceLanguage == target) {
-            overlayView?.text = text
+            onTranslated(text)
             return
         }
         val translator = translatorFor(sourceLanguage, target)
         val conditions = DownloadConditions.Builder().build()
-        overlayView?.text = "$text\n正在准备翻译模型..."
+        onProgress?.invoke("$text\n正在准备翻译模型...")
         translator.downloadModelIfNeeded(conditions)
             .addOnSuccessListener {
                 translator.translate(text)
                     .addOnSuccessListener { translated ->
-                        overlayView?.text = formatTranslation(text, translated)
+                        onTranslated(formatTranslation(text, translated))
                     }
                     .addOnFailureListener {
-                        overlayView?.text = text
+                        onTranslated(text)
                     }
             }
             .addOnFailureListener {
-                overlayView?.text = text
+                onTranslated(text)
             }
     }
 
@@ -381,6 +414,68 @@ class FloatingTranslateService : Service() {
         } else {
             translated
         }
+    }
+
+    private fun showTextBlockOverlays(blocks: List<Text.TextBlock>) {
+        if (!Settings.canDrawOverlays(this)) return
+        clearTextBlockOverlays()
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val metrics = resources.displayMetrics
+        blocks.asSequence()
+            .mapNotNull { block ->
+                val box = block.boundingBox ?: return@mapNotNull null
+                if (block.text.trim().length < MIN_TEXT_LENGTH) return@mapNotNull null
+                block to box
+            }
+            .sortedBy { (_, box) -> box.top }
+            .take(MAX_TEXT_BLOCK_OVERLAYS)
+            .forEach { (block, box) ->
+                val view = TextView(this).apply {
+                    text = if (showOriginal) block.text.trim() else "翻译中..."
+                    textSize = 13f
+                    setTextColor(0xffffffff.toInt())
+                    setBackgroundResource(com.nailong.realtimetranslator.R.drawable.subtitle_bg)
+                    setPadding(dp(6), dp(4), dp(6), dp(4))
+                    maxLines = if (showOriginal) 3 else 2
+                }
+                val params = textBlockLayoutParams(box, metrics.widthPixels, metrics.heightPixels)
+                windowManager.addView(view, params)
+                textOverlayViews.add(view)
+                translateTextForDisplay(block.text.trim()) { translated ->
+                    view.text = translated
+                }
+            }
+    }
+
+    private fun textBlockLayoutParams(
+        box: Rect,
+        screenWidth: Int,
+        screenHeight: Int
+    ): WindowManager.LayoutParams {
+        val minWidth = dp(96)
+        val width = (box.width() + dp(20)).coerceIn(minWidth, screenWidth - dp(24))
+        return WindowManager.LayoutParams(
+            width,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = box.left.coerceIn(dp(8), maxOf(dp(8), screenWidth - width - dp(8)))
+            y = box.top.coerceIn(dp(16), maxOf(dp(16), screenHeight - dp(72)))
+        }
+    }
+
+    private fun clearTextBlockOverlays() {
+        if (textOverlayViews.isEmpty()) return
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        textOverlayViews.forEach { view ->
+            runCatching { windowManager.removeView(view) }
+        }
+        textOverlayViews.clear()
     }
 
     private fun String.toMlKitLanguage(): String {
@@ -474,6 +569,7 @@ class FloatingTranslateService : Service() {
         overlayView?.let {
             (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
         }
+        clearTextBlockOverlays()
         super.onDestroy()
     }
 
@@ -484,6 +580,7 @@ class FloatingTranslateService : Service() {
         const val EXTRA_RESULT_DATA = "result_data"
         const val EXTRA_TARGET_LANGUAGE = "target_language"
         const val EXTRA_SHOW_ORIGINAL = "show_original"
+        const val EXTRA_TEXT_OVERLAY_MODE = "text_overlay_mode"
         const val EXTRA_STT_ENDPOINT = "stt_endpoint"
         const val EXTRA_STT_API_KEY = "stt_api_key"
         const val LANG_CHINESE = "zh"
@@ -497,6 +594,7 @@ class FloatingTranslateService : Service() {
         private const val NOTIFICATION_ID = 1001
         private const val OCR_INTERVAL_MS = 1200L
         private const val MIN_TEXT_LENGTH = 2
+        private const val MAX_TEXT_BLOCK_OVERLAYS = 6
         private const val AUDIO_SAMPLE_RATE = 16000
         private const val AUDIO_ACTIVITY_THRESHOLD = 0.015
     }

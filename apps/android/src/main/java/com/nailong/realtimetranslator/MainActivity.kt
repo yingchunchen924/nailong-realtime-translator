@@ -15,6 +15,7 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 class MainActivity : Activity() {
@@ -22,8 +23,10 @@ class MainActivity : Activity() {
     private lateinit var preferences: SharedPreferences
     private var targetIndex = 0
     private var showOriginal = false
+    private var textOverlayMode = false
     private lateinit var targetButton: Button
     private lateinit var originalButton: Button
+    private lateinit var textOverlayButton: Button
     private lateinit var sttEndpointInput: EditText
     private lateinit var sttApiKeyInput: EditText
 
@@ -73,6 +76,10 @@ class MainActivity : Activity() {
             text = originalButtonText()
             setOnClickListener { toggleShowOriginal() }
         }
+        textOverlayButton = Button(this).apply {
+            text = textOverlayButtonText()
+            setOnClickListener { toggleTextOverlayMode() }
+        }
         sttEndpointInput = EditText(this).apply {
             hint = "语音转写接口（OpenAI Whisper 兼容）"
             setSingleLine(true)
@@ -98,11 +105,12 @@ class MainActivity : Activity() {
         root.addView(overlayButton, buttonParams())
         root.addView(targetButton, buttonParams())
         root.addView(originalButton, buttonParams())
+        root.addView(textOverlayButton, buttonParams())
         root.addView(sttEndpointInput, buttonParams())
         root.addView(sttApiKeyInput, buttonParams())
         root.addView(screenButton, buttonParams())
         root.addView(stopButton, buttonParams())
-        setContentView(root)
+        setContentView(ScrollView(this).apply { addView(root) })
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.RECORD_AUDIO), 12)
@@ -148,6 +156,12 @@ class MainActivity : Activity() {
         saveSettings()
     }
 
+    private fun toggleTextOverlayMode() {
+        textOverlayMode = !textOverlayMode
+        textOverlayButton.text = textOverlayButtonText()
+        saveSettings()
+    }
+
     private fun targetButtonText(): String {
         return "目标语言：${TARGET_LANGUAGES[targetIndex].label}"
     }
@@ -156,16 +170,22 @@ class MainActivity : Activity() {
         return if (showOriginal) "原文显示：开启" else "原文显示：关闭"
     }
 
+    private fun textOverlayButtonText(): String {
+        return if (textOverlayMode) "文字覆盖：开启" else "文字覆盖：关闭"
+    }
+
     private fun loadSettings() {
         targetIndex = preferences.getInt(AppSettings.KEY_TARGET_INDEX, 0)
             .coerceIn(0, TARGET_LANGUAGES.lastIndex)
         showOriginal = preferences.getBoolean(AppSettings.KEY_SHOW_ORIGINAL, false)
+        textOverlayMode = preferences.getBoolean(AppSettings.KEY_TEXT_OVERLAY_MODE, false)
     }
 
     private fun saveSettings() {
         preferences.edit()
             .putInt(AppSettings.KEY_TARGET_INDEX, targetIndex)
             .putBoolean(AppSettings.KEY_SHOW_ORIGINAL, showOriginal)
+            .putBoolean(AppSettings.KEY_TEXT_OVERLAY_MODE, textOverlayMode)
             .putString(AppSettings.KEY_STT_ENDPOINT, sttEndpointInput.text.toString())
             .putString(AppSettings.KEY_STT_API_KEY, sttApiKeyInput.text.toString())
             .apply()
@@ -181,6 +201,7 @@ class MainActivity : Activity() {
                 putExtra(FloatingTranslateService.EXTRA_RESULT_DATA, data)
                 putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, TARGET_LANGUAGES[targetIndex].code)
                 putExtra(FloatingTranslateService.EXTRA_SHOW_ORIGINAL, showOriginal)
+                putExtra(FloatingTranslateService.EXTRA_TEXT_OVERLAY_MODE, textOverlayMode)
                 putExtra(FloatingTranslateService.EXTRA_STT_ENDPOINT, sttEndpointInput.text.toString())
                 putExtra(FloatingTranslateService.EXTRA_STT_API_KEY, sttApiKeyInput.text.toString())
             }
