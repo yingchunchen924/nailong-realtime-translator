@@ -7,3 +7,4 @@ faster-whisper>=1.0.0
 numpy>=1.26
 pystray>=0.19.5
 pyinstaller>=6.11
+pytest>=8.0
