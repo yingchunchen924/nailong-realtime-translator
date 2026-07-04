@@ -59,3 +59,31 @@ def test_text_block_overlay_signature_ignores_tiny_position_jitter():
     assert app.text_block_overlay_signature(first, False) == app.text_block_overlay_signature(jittered, False)
     assert app.text_block_overlay_signature(first, False) != app.text_block_overlay_signature(first, True)
     assert app.text_block_overlay_signature(first, False) != app.text_block_overlay_signature(changed, False)
+
+
+def test_saved_settings_round_trip_region(tmp_path):
+    app = load_windows_app()
+    path = tmp_path / "settings.json"
+    region = app.CaptureRegion(10, 20, 640, 360)
+
+    app.save_saved_settings(
+        {
+            "source_label": "英语",
+            "target_label": "中文",
+            "mode_screen": True,
+            "region": app.region_to_dict(region),
+        },
+        path,
+    )
+
+    loaded = app.load_saved_settings(path)
+    assert loaded["source_label"] == "英语"
+    assert loaded["target_label"] == "中文"
+    assert app.region_from_dict(loaded["region"]) == region
+
+
+def test_invalid_region_settings_are_ignored():
+    app = load_windows_app()
+
+    assert app.region_from_dict({"left": 1, "top": 2}) is None
+    assert app.region_from_dict("bad") is None

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import queue
 import shutil
@@ -33,6 +34,8 @@ ASSET_DIR = resource_path("assets")
 ICON_PATH = resource_path("assets", "nailong.ico")
 IMAGE_PATH = resource_path("assets", "nailong.jpg")
 LOCAL_TESSDATA_DIR = resource_path("tessdata")
+CONFIG_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming")) / "NailongRealtimeTranslator"
+CONFIG_PATH = CONFIG_DIR / "settings.json"
 
 LANGUAGES = {
     "自动检测": "auto",
@@ -96,6 +99,43 @@ class CaptureRegion:
 
     def label(self) -> str:
         return f"x={self.left}, y={self.top}, w={self.width}, h={self.height}"
+
+
+def region_to_dict(region: CaptureRegion | None) -> dict[str, int] | None:
+    if region is None:
+        return None
+    return {
+        "left": region.left,
+        "top": region.top,
+        "width": region.width,
+        "height": region.height,
+    }
+
+
+def region_from_dict(value: object) -> CaptureRegion | None:
+    if not isinstance(value, dict):
+        return None
+    try:
+        left = int(value["left"])
+        top = int(value["top"])
+        width = max(1, int(value["width"]))
+        height = max(1, int(value["height"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return CaptureRegion(left, top, width, height)
+
+
+def load_saved_settings(path: Path = CONFIG_PATH) -> dict[str, object]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def save_saved_settings(settings: dict[str, object], path: Path = CONFIG_PATH) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 @dataclass
@@ -770,19 +810,20 @@ class App:
         self.workers: list[threading.Thread] = []
         self.subtitle_window: SubtitleWindow | None = None
         self.text_overlay_window: TextOverlayWindow | None = None
-        self.region: CaptureRegion | None = None
+        saved = load_saved_settings()
+        self.region = region_from_dict(saved.get("region"))
 
-        self.source_var = tk.StringVar(value="自动检测")
-        self.target_var = tk.StringVar(value="中文")
-        self.mode_screen = tk.BooleanVar(value=True)
-        self.mode_audio = tk.BooleanVar(value=True)
-        self.show_original_var = tk.BooleanVar(value=False)
-        self.display_mode_var = tk.StringVar(value="字幕条")
-        self.interval_var = tk.DoubleVar(value=1.2)
-        self.whisper_model_var = tk.StringVar(value="tiny")
-        self.ocr_engine_var = tk.StringVar(value="Tesseract")
-        self.audio_device_var = tk.StringVar(value="系统默认")
-        self.region_var = tk.StringVar(value="屏幕区域：全屏")
+        self.source_var = tk.StringVar(value=self._saved_choice(saved, "source_label", list(LANGUAGES), "自动检测"))
+        self.target_var = tk.StringVar(value=self._saved_choice(saved, "target_label", list(LANGUAGES)[1:], "中文"))
+        self.mode_screen = tk.BooleanVar(value=bool(saved.get("mode_screen", True)))
+        self.mode_audio = tk.BooleanVar(value=bool(saved.get("mode_audio", True)))
+        self.show_original_var = tk.BooleanVar(value=bool(saved.get("show_original", False)))
+        self.display_mode_var = tk.StringVar(value=self._saved_choice(saved, "display_mode", ["字幕条", "文字覆盖"], "字幕条"))
+        self.interval_var = tk.DoubleVar(value=self._saved_float(saved, "interval", 1.2, 0.6, 3.0))
+        self.whisper_model_var = tk.StringVar(value=self._saved_choice(saved, "whisper_model", ["tiny", "base", "small"], "tiny"))
+        self.ocr_engine_var = tk.StringVar(value=self._saved_choice(saved, "ocr_engine", ["Tesseract"], "Tesseract"))
+        self.audio_device_var = tk.StringVar(value=str(saved.get("audio_device", "系统默认") or "系统默认"))
+        self.region_var = tk.StringVar(value=self.region_label())
         self.status_var = tk.StringVar(value="准备就绪")
 
         self._build_ui()
@@ -791,6 +832,19 @@ class App:
         self.root.after(250, self._poll_subtitles)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.after(300, self.start_minimized)
+
+    @staticmethod
+    def _saved_choice(settings: dict[str, object], key: str, valid: list[str], default: str) -> str:
+        value = settings.get(key)
+        return value if isinstance(value, str) and value in valid else default
+
+    @staticmethod
+    def _saved_float(settings: dict[str, object], key: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(settings.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return min(max(value, minimum), maximum)
 
     def _build_ui(self) -> None:
         shell = ttk.Frame(self.root, padding=22)
@@ -932,6 +986,27 @@ class App:
             "ocr_engine": self.ocr_engine_var.get(),
         }
 
+    def saved_settings(self) -> dict[str, object]:
+        return {
+            "source_label": self.source_var.get(),
+            "target_label": self.target_var.get(),
+            "mode_screen": self.mode_screen.get(),
+            "mode_audio": self.mode_audio.get(),
+            "show_original": self.show_original_var.get(),
+            "display_mode": self.display_mode_var.get(),
+            "interval": float(self.interval_var.get()),
+            "whisper_model": self.whisper_model_var.get(),
+            "ocr_engine": self.ocr_engine_var.get(),
+            "audio_device": self.audio_device_var.get(),
+            "region": region_to_dict(self.region),
+        }
+
+    def save_settings(self) -> None:
+        try:
+            save_saved_settings(self.saved_settings())
+        except Exception:
+            pass
+
     def audio_device_options(self) -> list[str]:
         if not self.engines.soundcard:
             return ["系统默认"]
@@ -950,11 +1025,16 @@ class App:
 
     def set_region(self, region: CaptureRegion) -> None:
         self.region = region
-        self.region_var.set(f"屏幕区域：{region.label()}")
+        self.region_var.set(self.region_label())
+        self.save_settings()
 
     def clear_region(self) -> None:
         self.region = None
-        self.region_var.set("屏幕区域：全屏")
+        self.region_var.set(self.region_label())
+        self.save_settings()
+
+    def region_label(self) -> str:
+        return f"屏幕区域：{self.region.label()}" if self.region else "屏幕区域：全屏"
 
     def swap_languages(self) -> None:
         source = self.source_var.get()
@@ -965,9 +1045,11 @@ class App:
         else:
             self.source_var.set(target)
             self.target_var.set(source)
+        self.save_settings()
 
     def start(self) -> None:
         self.stop()
+        self.save_settings()
         self.stop_event = threading.Event()
         self.show_subtitle_window()
         self.apply_display_options()
@@ -1008,6 +1090,7 @@ class App:
             self.text_overlay_window = TextOverlayWindow(self.root)
 
     def apply_display_options(self) -> None:
+        self.save_settings()
         if self.subtitle_window and self.subtitle_window.winfo_exists():
             self.subtitle_window.set_show_original(self.show_original_var.get())
             self.subtitle_window.deiconify()
@@ -1071,9 +1154,11 @@ class App:
             self.tray_icon = None
 
     def _on_close(self) -> None:
+        self.save_settings()
         self.hide_settings()
 
     def quit_app(self) -> None:
+        self.save_settings()
         self.stop()
         if self.tray_icon:
             self.tray_icon.stop()
