@@ -58,3 +58,9 @@ yingchunchen924/nailong-realtime-translator
 ```
 
 当前 `main` 分支已成功推送到 GitHub。仓库包含 Windows 和 Android 的 GitHub Actions 构建流程。
+
+`v0.1.2` 发布流程已通过，Release 已生成：
+
+- `nailong-android-debug.zip`
+- `nailong-windows.zip`
+- `nailong-realtime-translator-source.zip`
