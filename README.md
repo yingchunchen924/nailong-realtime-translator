@@ -29,6 +29,14 @@ Windows 端可在设置里切换“字幕条 / 文字覆盖”。文字覆盖模
 
 Windows exe 打包产物位于 `dist\windows\奶龙实时翻译.exe`。
 
+## 下载包
+
+仓库的 GitHub Actions 会自动构建 Android 和 Windows 下载包。发布版本时会在 GitHub Release 里生成：
+
+- `nailong-android-debug.zip`
+- `nailong-windows.zip`
+- `nailong-realtime-translator-source.zip`
+
 ## Android
 
 Android 端正在按原生悬浮窗方案实现：

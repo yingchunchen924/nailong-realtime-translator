@@ -67,3 +67,9 @@ outputs\nailong-realtime-translator-release\nailong-android-debug.zip
 - `nailong-windows.zip`
 
 它们会出现在仓库的 Actions 构建产物里，方便在网页上下载。
+
+发布版本时，推送 `v*` 标签或手动运行 `Release` workflow，会自动创建 GitHub Release，并上传：
+
+- `nailong-android-debug.zip`
+- `nailong-windows.zip`
+- `nailong-realtime-translator-source.zip`
