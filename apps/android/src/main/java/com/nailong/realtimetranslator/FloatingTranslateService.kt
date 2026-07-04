@@ -24,6 +24,8 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.widget.TextView
 import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.nl.languageid.LanguageIdentification
+import com.google.mlkit.nl.languageid.LanguageIdentifier
 import com.google.mlkit.nl.translate.TranslateLanguage
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.Translator
@@ -46,6 +48,7 @@ class FloatingTranslateService : Service() {
     private val chineseRecognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
     private val japaneseRecognizer by lazy { TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build()) }
     private val koreanRecognizer by lazy { TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build()) }
+    private val languageIdentifier: LanguageIdentifier by lazy { LanguageIdentification.getClient() }
     private val translators = mutableMapOf<String, Translator>()
     private var isRecognizing = false
     private var lastOcrAt = 0L
@@ -183,7 +186,12 @@ class FloatingTranslateService : Service() {
     }
 
     private fun translateText(text: String) {
-        val sourceLanguage = guessSourceLanguage(text)
+        identifySourceLanguage(text) { sourceLanguage ->
+            translateFromSource(text, sourceLanguage)
+        }
+    }
+
+    private fun translateFromSource(text: String, sourceLanguage: String) {
         val target = targetLanguage.toMlKitLanguage()
         if (sourceLanguage == target) {
             overlayView?.text = text
@@ -207,6 +215,21 @@ class FloatingTranslateService : Service() {
             }
     }
 
+    private fun identifySourceLanguage(text: String, onIdentified: (String) -> Unit) {
+        val scriptGuess = guessSourceLanguageByScript(text)
+        if (scriptGuess != null) {
+            onIdentified(scriptGuess)
+            return
+        }
+        languageIdentifier.identifyLanguage(text)
+            .addOnSuccessListener { tag ->
+                onIdentified(tag.toMlKitLanguageOrEnglish())
+            }
+            .addOnFailureListener {
+                onIdentified(TranslateLanguage.ENGLISH)
+            }
+    }
+
     private fun translatorFor(source: String, target: String): Translator {
         val key = "$source->$target"
         return translators.getOrPut(key) {
@@ -218,13 +241,13 @@ class FloatingTranslateService : Service() {
         }
     }
 
-    private fun guessSourceLanguage(text: String): String {
+    private fun guessSourceLanguageByScript(text: String): String? {
         return when {
             text.any { it in '\u4e00'..'\u9fff' } -> TranslateLanguage.CHINESE
             text.any { it in '\u3040'..'\u30ff' } -> TranslateLanguage.JAPANESE
             text.any { it in '\uac00'..'\ud7af' } -> TranslateLanguage.KOREAN
             text.any { it in '\u0400'..'\u04ff' } -> TranslateLanguage.RUSSIAN
-            else -> TranslateLanguage.ENGLISH
+            else -> null
         }
     }
 
@@ -237,6 +260,22 @@ class FloatingTranslateService : Service() {
             LANG_FRENCH -> TranslateLanguage.FRENCH
             LANG_RUSSIAN -> TranslateLanguage.RUSSIAN
             else -> TranslateLanguage.CHINESE
+        }
+    }
+
+    private fun String.toMlKitLanguageOrEnglish(): String {
+        return when (this.lowercase()) {
+            "zh", "zh-cn", "zh-tw" -> TranslateLanguage.CHINESE
+            "en" -> TranslateLanguage.ENGLISH
+            "ja" -> TranslateLanguage.JAPANESE
+            "ko" -> TranslateLanguage.KOREAN
+            "de" -> TranslateLanguage.GERMAN
+            "fr" -> TranslateLanguage.FRENCH
+            "ru" -> TranslateLanguage.RUSSIAN
+            "es" -> TranslateLanguage.SPANISH
+            "it" -> TranslateLanguage.ITALIAN
+            "pt" -> TranslateLanguage.PORTUGUESE
+            else -> TranslateLanguage.ENGLISH
         }
     }
 
@@ -294,6 +333,7 @@ class FloatingTranslateService : Service() {
         chineseRecognizer.close()
         japaneseRecognizer.close()
         koreanRecognizer.close()
+        languageIdentifier.close()
         translators.values.forEach { it.close() }
         overlayView?.let {
             (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(it)
