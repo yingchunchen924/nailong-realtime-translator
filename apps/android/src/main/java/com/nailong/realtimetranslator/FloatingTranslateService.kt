@@ -111,6 +111,7 @@ class FloatingTranslateService : Service() {
             val image = reader.acquireLatestImage() ?: return@setOnImageAvailableListener
             image.close()
             mainHandler.post {
+                // TODO: send the frame to ML Kit or PaddleOCR, then render translated text.
                 overlayView?.text = "正在检测屏幕文字和播放音频..."
             }
         }, mainHandler)

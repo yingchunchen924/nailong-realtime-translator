@@ -4,6 +4,7 @@ import hashlib
 import os
 import queue
 import shutil
+import sys
 import threading
 import time
 import tkinter as tk
@@ -16,11 +17,22 @@ from PIL import Image, ImageEnhance, ImageOps, ImageTk
 APP_NAME = "奶龙实时翻译"
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent.parent
-ASSET_DIR = PROJECT_DIR / "assets"
-ICON_PATH = ASSET_DIR / "nailong.ico"
-IMAGE_PATH = ASSET_DIR / "nailong.jpg"
-LOCAL_TESSDATA_DIR = PROJECT_DIR / "tessdata"
 DEFAULT_TESSERACT_EXE = Path("C:/Program Files/Tesseract-OCR/tesseract.exe")
+
+
+def resource_path(*parts: str) -> Path:
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS).joinpath(*parts)
+    project_path = PROJECT_DIR.joinpath(*parts)
+    if project_path.exists():
+        return project_path
+    return BASE_DIR.joinpath(*parts)
+
+
+ASSET_DIR = resource_path("assets")
+ICON_PATH = resource_path("assets", "nailong.ico")
+IMAGE_PATH = resource_path("assets", "nailong.jpg")
+LOCAL_TESSDATA_DIR = resource_path("tessdata")
 
 LANGUAGES = {
     "自动检测": "auto",

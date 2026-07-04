@@ -1,0 +1,36 @@
+name: Build Windows
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        working-directory: apps/windows
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build exe
+        working-directory: apps/windows
+        run: |
+          pyinstaller --noconsole --onefile --clean --distpath ../../dist/windows --workpath build --name "奶龙实时翻译" --icon "../../assets/nailong.ico" --add-data "../../assets;assets" --add-data "../../tessdata;tessdata" app.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nailong-windows
+          path: dist/windows/*
