@@ -17,7 +17,6 @@ import android.media.AudioPlaybackCaptureConfiguration
 import android.media.AudioRecord
 import android.media.Image
 import android.media.ImageReader
-import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
@@ -52,7 +51,7 @@ class FloatingTranslateService : Service() {
     private var audioRecord: AudioRecord? = null
     private var audioThread: Thread? = null
     @Volatile private var isAudioCapturing = false
-    private val audioSubtitleEngine: AudioSubtitleEngine = PlaceholderAudioSubtitleEngine()
+    private var audioSubtitleEngine: AudioSubtitleEngine = PlaceholderAudioSubtitleEngine()
     private val latinRecognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
     private val chineseRecognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
     private val japaneseRecognizer by lazy { TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build()) }
@@ -74,6 +73,7 @@ class FloatingTranslateService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: targetLanguage
+        configureAudioSubtitleEngine(intent)
         showOverlay("奶龙实时翻译已在后台运行")
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -87,6 +87,17 @@ class FloatingTranslateService : Service() {
             startPlaybackAudioCapture()
         }
         return START_STICKY
+    }
+
+    private fun configureAudioSubtitleEngine(intent: Intent?) {
+        val endpoint = intent?.getStringExtra(EXTRA_STT_ENDPOINT).orEmpty().trim()
+        val apiKey = intent?.getStringExtra(EXTRA_STT_API_KEY).orEmpty().trim()
+        audioSubtitleEngine.close()
+        audioSubtitleEngine = if (endpoint.isNotBlank() && apiKey.isNotBlank()) {
+            WhisperHttpAudioSubtitleEngine(endpoint, apiKey)
+        } else {
+            PlaceholderAudioSubtitleEngine()
+        }
     }
 
     private fun showOverlay(text: String) {
@@ -202,9 +213,13 @@ class FloatingTranslateService : Service() {
                 if (read <= 0) continue
                 val rms = calculateRms(buffer, read)
                 if (rms > AUDIO_ACTIVITY_THRESHOLD) {
-                    audioSubtitleEngine.acceptPcm16(buffer, read, AUDIO_SAMPLE_RATE) { subtitle ->
+                    audioSubtitleEngine.acceptPcm16(buffer, read, AUDIO_SAMPLE_RATE) { result ->
                         mainHandler.post {
-                            overlayView?.text = subtitle
+                            if (result.isTranscript) {
+                                translateText(result.text)
+                            } else {
+                                overlayView?.text = result.text
+                            }
                         }
                     }
                 }
@@ -432,6 +447,8 @@ class FloatingTranslateService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val EXTRA_TARGET_LANGUAGE = "target_language"
+        const val EXTRA_STT_ENDPOINT = "stt_endpoint"
+        const val EXTRA_STT_API_KEY = "stt_api_key"
         const val LANG_CHINESE = "zh"
         const val LANG_ENGLISH = "en"
         const val LANG_JAPANESE = "ja"

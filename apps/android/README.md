@@ -14,14 +14,15 @@
 - 使用 ML Kit Translate 把识别文本翻译为中文、英语、日语、韩语、德语、法语、俄语。
 - 使用 ML Kit Language ID 自动判断源语言。
 - 使用 AudioPlaybackCapture 捕获手机当前播放的媒体/游戏音频。
-- 预留 `AudioSubtitleEngine`，后续接入 Whisper API 或端侧语音识别。
+- `AudioSubtitleEngine` 支持 OpenAI Whisper 兼容 HTTP 转写接口。
+- 不填写 API Key 时，音频捕获会运行但只显示监听状态。
 - 首次使用某个语言方向时，系统会下载对应翻译模型。
 
 ## 后续增强
 
 屏幕文字已接入 ML Kit Text Recognition v2。复杂排版、游戏字幕和中文准确率后续可继续评估 PaddleOCR Android。
 
-音频捕获已接入；语音转文字引擎后续继续接入。
+音频捕获和 Whisper HTTP 转写已接入；端侧语音识别后续继续优化。
 
 音频字幕建议接入：
 

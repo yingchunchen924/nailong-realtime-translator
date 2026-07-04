@@ -9,8 +9,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.text.InputType
 import android.view.Gravity
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -18,6 +20,8 @@ class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
     private var targetIndex = 0
     private lateinit var targetButton: Button
+    private lateinit var sttEndpointInput: EditText
+    private lateinit var sttApiKeyInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,6 +56,16 @@ class MainActivity : Activity() {
             text = targetButtonText()
             setOnClickListener { toggleTargetLanguage() }
         }
+        sttEndpointInput = EditText(this).apply {
+            hint = "语音转写接口（OpenAI Whisper 兼容）"
+            setSingleLine(true)
+            setText(WhisperHttpAudioSubtitleEngine.DEFAULT_ENDPOINT)
+        }
+        sttApiKeyInput = EditText(this).apply {
+            hint = "语音转写 API Key（不填则只监听音频）"
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
         val screenButton = Button(this).apply {
             text = "开始屏幕/音频翻译"
             setOnClickListener { requestProjection() }
@@ -65,6 +79,8 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(overlayButton, buttonParams())
         root.addView(targetButton, buttonParams())
+        root.addView(sttEndpointInput, buttonParams())
+        root.addView(sttApiKeyInput, buttonParams())
         root.addView(screenButton, buttonParams())
         root.addView(stopButton, buttonParams())
         setContentView(root)
@@ -118,6 +134,8 @@ class MainActivity : Activity() {
                 putExtra(FloatingTranslateService.EXTRA_RESULT_CODE, resultCode)
                 putExtra(FloatingTranslateService.EXTRA_RESULT_DATA, data)
                 putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, TARGET_LANGUAGES[targetIndex].code)
+                putExtra(FloatingTranslateService.EXTRA_STT_ENDPOINT, sttEndpointInput.text.toString())
+                putExtra(FloatingTranslateService.EXTRA_STT_API_KEY, sttApiKeyInput.text.toString())
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent)

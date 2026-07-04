@@ -36,13 +36,13 @@
 - ML Kit Translate：中文、英语、日语、韩语、德语、法语、俄语目标语言切换。
 - ML Kit Language ID：自动识别源语言，改善拉丁文字语言判断。
 - AudioPlaybackCapture：捕获 Android 媒体/游戏播放音频。
-- AudioSubtitleEngine：语音字幕引擎接口和占位实现。
+- AudioSubtitleEngine：支持 OpenAI Whisper 兼容 HTTP 转写接口。
 
 待继续：
 
 - 安装 Android SDK 并构建 APK。
 - 评估 PaddleOCR Android 作为复杂场景增强。
-- 接入 Android 语音转文字引擎：Whisper API、端侧模型或其他 STT 服务。
+- 增强 Android 端侧语音识别，减少对网络接口的依赖。
 - 接入音频捕获/语音识别。
 
 ## GitHub
