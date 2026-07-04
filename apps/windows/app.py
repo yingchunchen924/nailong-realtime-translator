@@ -5,6 +5,7 @@ import json
 import os
 import queue
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -36,6 +37,8 @@ IMAGE_PATH = resource_path("assets", "nailong.jpg")
 LOCAL_TESSDATA_DIR = resource_path("tessdata")
 CONFIG_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming")) / "NailongRealtimeTranslator"
 CONFIG_PATH = CONFIG_DIR / "settings.json"
+WINDOWS_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+WINDOWS_RUN_VALUE = "NailongRealtimeTranslator"
 
 LANGUAGES = {
     "自动检测": "auto",
@@ -136,6 +139,56 @@ def load_saved_settings(path: Path = CONFIG_PATH) -> dict[str, object]:
 def save_saved_settings(settings: dict[str, object], path: Path = CONFIG_PATH) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def windows_startup_command(
+    executable: Path | None = None,
+    script_path: Path | None = None,
+    frozen: bool | None = None,
+) -> str:
+    is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
+    exe = Path(executable or sys.executable)
+    if not is_frozen and exe.name.lower() == "python.exe":
+        pythonw = exe.with_name("pythonw.exe")
+        if pythonw.exists():
+            exe = pythonw
+
+    args = [str(exe)]
+    if not is_frozen:
+        args.append(str(script_path or BASE_DIR / "app.py"))
+    return subprocess.list2cmdline(args)
+
+
+def is_windows_autostart_enabled() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, WINDOWS_RUN_KEY) as key:
+            value, _kind = winreg.QueryValueEx(key, WINDOWS_RUN_VALUE)
+        return str(value) == windows_startup_command()
+    except Exception:
+        return False
+
+
+def set_windows_autostart(enabled: bool) -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, WINDOWS_RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if enabled:
+                winreg.SetValueEx(key, WINDOWS_RUN_VALUE, 0, winreg.REG_SZ, windows_startup_command())
+            else:
+                try:
+                    winreg.DeleteValue(key, WINDOWS_RUN_VALUE)
+                except FileNotFoundError:
+                    pass
+        return True
+    except Exception:
+        return False
 
 
 @dataclass
@@ -825,6 +878,7 @@ class App:
         self.audio_device_var = tk.StringVar(value=str(saved.get("audio_device", "系统默认") or "系统默认"))
         self.region_var = tk.StringVar(value=self.region_label())
         self.status_var = tk.StringVar(value="准备就绪")
+        self.autostart_var = tk.BooleanVar(value=is_windows_autostart_enabled())
 
         self._build_ui()
         self.tray_icon = None
@@ -957,6 +1011,9 @@ class App:
         ttk.Button(actions, text="显示字幕窗", command=self.show_subtitle_window).pack(side="left")
         ttk.Button(actions, text="引擎状态", command=self.show_engine_status).pack(side="left", padx=10)
         ttk.Button(actions, text="刷新引擎", command=self.refresh_engines).pack(side="left")
+        ttk.Checkbutton(actions, text="开机自启", variable=self.autostart_var, command=self.toggle_autostart).pack(
+            side="left", padx=(12, 0)
+        )
 
         preview = ttk.LabelFrame(shell, text="当前字幕", padding=16)
         preview.pack(fill="both", expand=True, pady=(12, 0))
@@ -1105,6 +1162,14 @@ class App:
         if hasattr(self, "audio_device_combo"):
             self.audio_device_combo.configure(values=self.audio_device_options())
         self.status_var.set("引擎状态已刷新")
+
+    def toggle_autostart(self) -> None:
+        enabled = self.autostart_var.get()
+        if set_windows_autostart(enabled):
+            self.status_var.set("已开启开机自启" if enabled else "已关闭开机自启")
+            return
+        self.autostart_var.set(is_windows_autostart_enabled())
+        messagebox.showwarning(APP_NAME, "开机自启设置失败，请确认当前 Windows 账户权限。")
 
     def _poll_subtitles(self) -> None:
         while True:

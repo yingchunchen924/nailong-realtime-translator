@@ -1,16 +1,18 @@
 # 下载安装
 
-当前可下载版本：v0.1.3
+当前可下载版本：v0.1.4
 
 下载页面：
 
-https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.3
+https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.4
 
 ## Windows 电脑
 
 下载 `nailong-windows.zip`，解压后运行里面的 `奶龙实时翻译.exe`。
 
 启动后软件会在后台运行，屏幕底部只显示一行字幕。需要调整语言、字幕模式、文字覆盖、是否显示原文时，可以从系统托盘打开设置。
+
+设置页里的“开机自启”可以让软件随 Windows 登录后自动后台运行。
 
 ## Android 手机
 

@@ -87,3 +87,30 @@ def test_invalid_region_settings_are_ignored():
 
     assert app.region_from_dict({"left": 1, "top": 2}) is None
     assert app.region_from_dict("bad") is None
+
+
+def test_windows_startup_command_quotes_paths():
+    app = load_windows_app()
+
+    command = app.windows_startup_command(
+        executable=Path(r"C:\Program Files\Python311\python.exe"),
+        script_path=Path(r"C:\Users\hp\Documents\Nailong App\app.py"),
+        frozen=False,
+    )
+
+    assert command == (
+        r'"C:\Program Files\Python311\python.exe" '
+        r'"C:\Users\hp\Documents\Nailong App\app.py"'
+    )
+
+
+def test_windows_startup_command_for_packaged_exe_has_no_script_arg():
+    app = load_windows_app()
+
+    command = app.windows_startup_command(
+        executable=Path(r"C:\Program Files\Nailong\奶龙实时翻译.exe"),
+        script_path=Path(r"C:\ignored\app.py"),
+        frozen=True,
+    )
+
+    assert command == r'"C:\Program Files\Nailong\奶龙实时翻译.exe"'
