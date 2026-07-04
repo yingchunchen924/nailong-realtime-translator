@@ -24,11 +24,23 @@ jobs:
         with:
           gradle-version: "8.10.2"
 
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
       - name: Build APK
-        run: gradle :apps:android:assembleDebug
+        run: gradle :apps:android:assembleDebug -Pnailong.compileSdk=35 -Pnailong.targetSdk=35 --no-daemon
+
+      - name: Package APK
+        run: |
+          mkdir -p release
+          cp apps/android/build/outputs/apk/debug/*.apk release/nailong-android-debug.apk
+          cd release
+          zip nailong-android-debug.zip nailong-android-debug.apk
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nailong-android-debug
-          path: apps/android/build/outputs/apk/debug/*.apk
+          path: release/nailong-android-debug.zip

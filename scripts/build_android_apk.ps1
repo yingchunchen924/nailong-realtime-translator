@@ -33,9 +33,9 @@ $gradleBat = Get-ChildItem "$env:USERPROFILE\.gradle\wrapper\dists" -Recurse -Fi
     Select-Object -First 1
 
 if ($gradleBat) {
-    & $gradleBat.FullName ":apps:android:assembleDebug" "--no-daemon"
+    & $gradleBat.FullName ":apps:android:assembleDebug" "-Pnailong.compileSdk=36" "-Pnailong.targetSdk=36" "-Pnailong.buildTools=36.1.0" "--no-daemon"
     exit $LASTEXITCODE
 }
 
-& gradle ":apps:android:assembleDebug"
+& gradle ":apps:android:assembleDebug" "-Pnailong.compileSdk=36" "-Pnailong.targetSdk=36" "-Pnailong.buildTools=36.1.0"
 exit $LASTEXITCODE

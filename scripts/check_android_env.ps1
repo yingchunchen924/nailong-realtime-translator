@@ -14,7 +14,7 @@ if (-not $sdkCandidates) {
 
 $sdk = [string]$sdkCandidates[0]
 if (-not (Test-Path (Join-Path $sdk "platforms\android-36")) -and (Test-Path (Join-Path $sdk "platforms\android-36.1"))) {
-    $compatSdk = Join-Path $env:USERPROFILE "Documents\Codex\android-sdk-compat"
+    $compatSdk = Join-Path (Resolve-Path ".").Path "build\android-sdk-compat"
     if (Test-Path (Join-Path $compatSdk "platforms\android-36")) {
         $sdk = $compatSdk
     }

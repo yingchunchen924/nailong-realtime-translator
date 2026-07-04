@@ -24,13 +24,24 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Validate Python
+        run: |
+          python -m py_compile apps/windows/app.py
+          python -m pytest -q tests/test_windows_ocr_blocks.py
+
       - name: Build exe
         working-directory: apps/windows
         run: |
           pyinstaller --noconsole --onefile --clean --distpath ../../dist/windows --workpath build --name "奶龙实时翻译" --icon "../../assets/nailong.ico" --add-data "../../assets;assets" --add-data "../../tessdata;tessdata" app.py
 
+      - name: Package exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive -LiteralPath dist/windows/* -DestinationPath release/nailong-windows.zip -Force
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: nailong-windows
-          path: dist/windows/*
+          path: release/nailong-windows.zip

@@ -3,15 +3,21 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val nailongCompileSdk = providers.gradleProperty("nailong.compileSdk").orNull?.toInt() ?: 35
+val nailongTargetSdk = providers.gradleProperty("nailong.targetSdk").orNull?.toInt() ?: nailongCompileSdk
+val nailongBuildTools = providers.gradleProperty("nailong.buildTools").orNull
+
 android {
     namespace = "com.nailong.realtimetranslator"
-    compileSdk = 36
-    buildToolsVersion = "36.1.0"
+    compileSdk = nailongCompileSdk
+    nailongBuildTools?.let {
+        buildToolsVersion = it
+    }
 
     defaultConfig {
         applicationId = "com.nailong.realtimetranslator"
         minSdk = 29
-        targetSdk = 36
+        targetSdk = nailongTargetSdk
         versionCode = 1
         versionName = "0.1.0"
     }

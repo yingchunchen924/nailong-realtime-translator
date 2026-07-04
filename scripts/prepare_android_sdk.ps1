@@ -19,7 +19,7 @@ $targetSdk = $sourceSdk
 if (-not (Test-Path (Join-Path $sourceSdk "platforms\android-36"))) {
     $minorPlatform = Join-Path $sourceSdk "platforms\android-36.1"
     if (Test-Path $minorPlatform) {
-        $compatSdk = Join-Path $env:USERPROFILE "Documents\Codex\android-sdk-compat"
+        $compatSdk = Join-Path $repoRoot "build\android-sdk-compat"
         New-Item -ItemType Directory -Force -Path `
             (Join-Path $compatSdk "platforms"), `
             (Join-Path $compatSdk "build-tools"), `
@@ -53,12 +53,12 @@ if (-not (Test-Path (Join-Path $sourceSdk "platforms\android-36"))) {
 
         $platformToolsSource = Join-Path $sourceSdk "platform-tools"
         if (Test-Path $platformToolsSource) {
-            Copy-Item -LiteralPath (Join-Path $platformToolsSource "*") -Destination (Join-Path $compatSdk "platform-tools") -Recurse -Force
+            Copy-Item -Path (Join-Path $platformToolsSource "*") -Destination (Join-Path $compatSdk "platform-tools") -Recurse -Force
         }
 
         $licensesSource = Join-Path $sourceSdk "licenses"
         if (Test-Path $licensesSource) {
-            Copy-Item -LiteralPath (Join-Path $licensesSource "*") -Destination (Join-Path $compatSdk "licenses") -Recurse -Force
+            Copy-Item -Path (Join-Path $licensesSource "*") -Destination (Join-Path $compatSdk "licenses") -Recurse -Force
         }
 
         $targetSdk = $compatSdk

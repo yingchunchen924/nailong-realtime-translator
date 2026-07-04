@@ -28,10 +28,10 @@ pytest -q tests\test_windows_ocr_blocks.py
 C:\Users\hp\AppData\Local\Android\Sdk
 ```
 
-如果只安装了 `android-36.1` 平台，脚本会自动在用户文档目录创建一个兼容 SDK 镜像：
+如果只安装了 `android-36.1` 平台，脚本会自动在仓库构建目录创建一个兼容 SDK 镜像：
 
 ```text
-C:\Users\hp\Documents\Codex\android-sdk-compat
+build\android-sdk-compat
 ```
 
 命令行构建：
@@ -58,3 +58,12 @@ apps\android\build\outputs\apk\debug\android-debug.apk
 outputs\nailong-realtime-translator-release\nailong-android-debug.apk
 outputs\nailong-realtime-translator-release\nailong-android-debug.zip
 ```
+
+## GitHub 下载包
+
+推送到 `main` 后，GitHub Actions 会自动构建：
+
+- `nailong-android-debug.zip`
+- `nailong-windows.zip`
+
+它们会出现在仓库的 Actions 构建产物里，方便在网页上下载。
