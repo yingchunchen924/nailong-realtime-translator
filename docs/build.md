@@ -30,3 +30,5 @@ apps\android\build\outputs\apk\debug\android-debug.apk
 ```
 
 Android 构建需要本机安装 Android SDK。GitHub Actions 会在云端自动准备 SDK。
+
+仓库没有提交 Gradle Wrapper，Android CI 会通过 `gradle/actions/setup-gradle` 安装 Gradle 8.10.2 后执行构建。

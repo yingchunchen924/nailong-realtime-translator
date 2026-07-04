@@ -62,6 +62,7 @@ class FloatingTranslateService : Service() {
     private var lastOcrAt = 0L
     private var lastText = ""
     private var targetLanguage = LANG_CHINESE
+    private var showOriginal = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -72,7 +73,9 @@ class FloatingTranslateService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: targetLanguage
+        targetLanguage = intent?.getStringExtra(EXTRA_TARGET_LANGUAGE) ?: savedTargetLanguage()
+        showOriginal = intent?.takeIf { it.hasExtra(EXTRA_SHOW_ORIGINAL) }?.getBooleanExtra(EXTRA_SHOW_ORIGINAL, false)
+            ?: savedShowOriginal()
         configureAudioSubtitleEngine(intent)
         showOverlay("奶龙实时翻译已在后台运行")
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
@@ -90,14 +93,39 @@ class FloatingTranslateService : Service() {
     }
 
     private fun configureAudioSubtitleEngine(intent: Intent?) {
-        val endpoint = intent?.getStringExtra(EXTRA_STT_ENDPOINT).orEmpty().trim()
-        val apiKey = intent?.getStringExtra(EXTRA_STT_API_KEY).orEmpty().trim()
+        val preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        val endpoint = (
+            intent?.getStringExtra(EXTRA_STT_ENDPOINT)
+                ?: preferences.getString(AppSettings.KEY_STT_ENDPOINT, WhisperHttpAudioSubtitleEngine.DEFAULT_ENDPOINT)
+        ).orEmpty().trim()
+        val apiKey = (
+            intent?.getStringExtra(EXTRA_STT_API_KEY)
+                ?: preferences.getString(AppSettings.KEY_STT_API_KEY, "")
+        ).orEmpty().trim()
         audioSubtitleEngine.close()
         audioSubtitleEngine = if (endpoint.isNotBlank() && apiKey.isNotBlank()) {
             WhisperHttpAudioSubtitleEngine(endpoint, apiKey)
         } else {
             PlaceholderAudioSubtitleEngine()
         }
+    }
+
+    private fun savedTargetLanguage(): String {
+        val preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        return when (preferences.getInt(AppSettings.KEY_TARGET_INDEX, 0)) {
+            1 -> LANG_ENGLISH
+            2 -> LANG_JAPANESE
+            3 -> LANG_KOREAN
+            4 -> LANG_GERMAN
+            5 -> LANG_FRENCH
+            6 -> LANG_RUSSIAN
+            else -> LANG_CHINESE
+        }
+    }
+
+    private fun savedShowOriginal(): Boolean {
+        val preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        return preferences.getBoolean(AppSettings.KEY_SHOW_ORIGINAL, false)
     }
 
     private fun showOverlay(text: String) {
@@ -300,7 +328,7 @@ class FloatingTranslateService : Service() {
             .addOnSuccessListener {
                 translator.translate(text)
                     .addOnSuccessListener { translated ->
-                        overlayView?.text = translated
+                        overlayView?.text = formatTranslation(text, translated)
                     }
                     .addOnFailureListener {
                         overlayView?.text = text
@@ -344,6 +372,14 @@ class FloatingTranslateService : Service() {
             text.any { it in '\uac00'..'\ud7af' } -> TranslateLanguage.KOREAN
             text.any { it in '\u0400'..'\u04ff' } -> TranslateLanguage.RUSSIAN
             else -> null
+        }
+    }
+
+    private fun formatTranslation(original: String, translated: String): String {
+        return if (showOriginal && original != translated) {
+            "$original\n$translated"
+        } else {
+            translated
         }
     }
 
@@ -447,6 +483,7 @@ class FloatingTranslateService : Service() {
         const val EXTRA_RESULT_CODE = "result_code"
         const val EXTRA_RESULT_DATA = "result_data"
         const val EXTRA_TARGET_LANGUAGE = "target_language"
+        const val EXTRA_SHOW_ORIGINAL = "show_original"
         const val EXTRA_STT_ENDPOINT = "stt_endpoint"
         const val EXTRA_STT_API_KEY = "stt_api_key"
         const val LANG_CHINESE = "zh"

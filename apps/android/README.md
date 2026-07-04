@@ -16,6 +16,8 @@
 - 使用 AudioPlaybackCapture 捕获手机当前播放的媒体/游戏音频。
 - `AudioSubtitleEngine` 支持 OpenAI Whisper 兼容 HTTP 转写接口。
 - 不填写 API Key 时，音频捕获会运行但只显示监听状态。
+- 会保存目标语言、是否显示原文、语音转写接口和 API Key。
+- 原文显示关闭时只显示译文，开启时显示原文和译文。
 - 首次使用某个语言方向时，系统会下载对应翻译模型。
 
 ## 后续增强
@@ -35,3 +37,5 @@
 用 Android Studio 打开仓库根目录 `nailong-realtime-translator`，等待 Gradle 同步后运行 `apps:android`。
 
 本机当前未检测到 Android SDK，所以暂未生成 APK。
+
+GitHub Actions 会显式安装 Gradle 8.10.2，并在云端构建 debug APK。

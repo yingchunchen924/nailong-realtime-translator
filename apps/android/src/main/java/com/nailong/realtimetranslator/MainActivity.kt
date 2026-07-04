@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -18,15 +19,27 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
     private lateinit var projectionManager: MediaProjectionManager
+    private lateinit var preferences: SharedPreferences
     private var targetIndex = 0
+    private var showOriginal = false
     private lateinit var targetButton: Button
+    private lateinit var originalButton: Button
     private lateinit var sttEndpointInput: EditText
     private lateinit var sttApiKeyInput: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         projectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        preferences = getSharedPreferences(AppSettings.PREFS_NAME, Context.MODE_PRIVATE)
+        loadSettings()
         buildUi()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::sttEndpointInput.isInitialized && ::sttApiKeyInput.isInitialized) {
+            saveSettings()
+        }
     }
 
     private fun buildUi() {
@@ -56,15 +69,20 @@ class MainActivity : Activity() {
             text = targetButtonText()
             setOnClickListener { toggleTargetLanguage() }
         }
+        originalButton = Button(this).apply {
+            text = originalButtonText()
+            setOnClickListener { toggleShowOriginal() }
+        }
         sttEndpointInput = EditText(this).apply {
             hint = "语音转写接口（OpenAI Whisper 兼容）"
             setSingleLine(true)
-            setText(WhisperHttpAudioSubtitleEngine.DEFAULT_ENDPOINT)
+            setText(preferences.getString(AppSettings.KEY_STT_ENDPOINT, WhisperHttpAudioSubtitleEngine.DEFAULT_ENDPOINT))
         }
         sttApiKeyInput = EditText(this).apply {
             hint = "语音转写 API Key（不填则只监听音频）"
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setText(preferences.getString(AppSettings.KEY_STT_API_KEY, ""))
         }
         val screenButton = Button(this).apply {
             text = "开始屏幕/音频翻译"
@@ -79,6 +97,7 @@ class MainActivity : Activity() {
         root.addView(subtitle)
         root.addView(overlayButton, buttonParams())
         root.addView(targetButton, buttonParams())
+        root.addView(originalButton, buttonParams())
         root.addView(sttEndpointInput, buttonParams())
         root.addView(sttApiKeyInput, buttonParams())
         root.addView(screenButton, buttonParams())
@@ -120,20 +139,48 @@ class MainActivity : Activity() {
     private fun toggleTargetLanguage() {
         targetIndex = (targetIndex + 1) % TARGET_LANGUAGES.size
         targetButton.text = targetButtonText()
+        saveSettings()
+    }
+
+    private fun toggleShowOriginal() {
+        showOriginal = !showOriginal
+        originalButton.text = originalButtonText()
+        saveSettings()
     }
 
     private fun targetButtonText(): String {
         return "目标语言：${TARGET_LANGUAGES[targetIndex].label}"
     }
 
+    private fun originalButtonText(): String {
+        return if (showOriginal) "原文显示：开启" else "原文显示：关闭"
+    }
+
+    private fun loadSettings() {
+        targetIndex = preferences.getInt(AppSettings.KEY_TARGET_INDEX, 0)
+            .coerceIn(0, TARGET_LANGUAGES.lastIndex)
+        showOriginal = preferences.getBoolean(AppSettings.KEY_SHOW_ORIGINAL, false)
+    }
+
+    private fun saveSettings() {
+        preferences.edit()
+            .putInt(AppSettings.KEY_TARGET_INDEX, targetIndex)
+            .putBoolean(AppSettings.KEY_SHOW_ORIGINAL, showOriginal)
+            .putString(AppSettings.KEY_STT_ENDPOINT, sttEndpointInput.text.toString())
+            .putString(AppSettings.KEY_STT_API_KEY, sttApiKeyInput.text.toString())
+            .apply()
+    }
+
     @Deprecated("Android framework callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQUEST_PROJECTION && resultCode == RESULT_OK && data != null) {
+            saveSettings()
             val serviceIntent = Intent(this, FloatingTranslateService::class.java).apply {
                 putExtra(FloatingTranslateService.EXTRA_RESULT_CODE, resultCode)
                 putExtra(FloatingTranslateService.EXTRA_RESULT_DATA, data)
                 putExtra(FloatingTranslateService.EXTRA_TARGET_LANGUAGE, TARGET_LANGUAGES[targetIndex].code)
+                putExtra(FloatingTranslateService.EXTRA_SHOW_ORIGINAL, showOriginal)
                 putExtra(FloatingTranslateService.EXTRA_STT_ENDPOINT, sttEndpointInput.text.toString())
                 putExtra(FloatingTranslateService.EXTRA_STT_API_KEY, sttApiKeyInput.text.toString())
             }
