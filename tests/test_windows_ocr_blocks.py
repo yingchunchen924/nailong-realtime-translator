@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -87,6 +88,39 @@ def test_invalid_region_settings_are_ignored():
 
     assert app.region_from_dict({"left": 1, "top": 2}) is None
     assert app.region_from_dict("bad") is None
+
+
+def test_transcript_filter_rejects_empty_noise_and_common_hallucinations():
+    app = load_windows_app()
+
+    assert not app.looks_like_transcript("")
+    assert not app.looks_like_transcript("...")
+    assert not app.looks_like_transcript("Thank you for watching!")
+    assert app.looks_like_transcript("Hello, welcome back")
+    assert app.looks_like_transcript("今日はいい天気です")
+
+
+def test_audio_segments_filter_low_confidence_fragments():
+    app = load_windows_app()
+    worker = object.__new__(app.AudioSubtitleWorker)
+
+    text = worker._segments_to_text(
+        [
+            SimpleNamespace(text="Thank you for watching", no_speech_prob=0.1, avg_logprob=-0.1, compression_ratio=1.0),
+            SimpleNamespace(text="Hello world", no_speech_prob=0.1, avg_logprob=-0.1, compression_ratio=1.0),
+            SimpleNamespace(text="bad guess", no_speech_prob=0.9, avg_logprob=-0.1, compression_ratio=1.0),
+        ]
+    )
+
+    assert text == "Hello world"
+
+
+def test_legacy_settings_are_mapped_to_feature_modes():
+    app = load_windows_app()
+
+    assert app.App._initial_feature_mode({"display_mode": "文字覆盖"}) == app.FEATURE_SCREEN_OVERLAY
+    assert app.App._initial_feature_mode({"mode_screen": True, "mode_audio": False}) == app.FEATURE_SCREEN_OVERLAY
+    assert app.App._initial_feature_mode({"mode_screen": True, "mode_audio": True}) == app.FEATURE_AUDIO_TRANSLATE
 
 
 def test_windows_startup_command_quotes_paths():

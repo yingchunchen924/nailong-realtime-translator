@@ -85,6 +85,31 @@ TESSERACT_LANGS = {
 }
 
 MAX_TEXT_BLOCKS = 8
+FEATURE_AUDIO_SUBTITLE = "字幕生成"
+FEATURE_AUDIO_TRANSLATE = "字幕翻译"
+FEATURE_SCREEN_OVERLAY = "覆盖翻译"
+FEATURE_MODES = [FEATURE_AUDIO_SUBTITLE, FEATURE_AUDIO_TRANSLATE, FEATURE_SCREEN_OVERLAY]
+DISPLAY_SUBTITLE_BAR = "字幕条"
+DISPLAY_TEXT_OVERLAY = "文字覆盖"
+AUDIO_RMS_THRESHOLD = 0.014
+AUDIO_PEAK_THRESHOLD = 0.045
+AUDIO_ACTIVE_SAMPLE_THRESHOLD = 0.025
+AUDIO_ACTIVE_RATIO_THRESHOLD = 0.012
+MIN_TRANSCRIPT_TEXT_CHARS = 2
+
+HALLUCINATED_TRANSCRIPTS = {
+    "thank you",
+    "thanks",
+    "thanks for watching",
+    "thank you for watching",
+    "you",
+    "字幕志愿者",
+    "字幕由",
+    "谢谢观看",
+    "感谢观看",
+    "请不吝点赞",
+    "再见",
+}
 
 
 @dataclass(frozen=True)
@@ -128,6 +153,29 @@ def region_from_dict(value: object) -> CaptureRegion | None:
     except (KeyError, TypeError, ValueError):
         return None
     return CaptureRegion(left, top, width, height)
+
+
+def meaningful_text_score(text: str) -> int:
+    return sum(
+        ch.isalnum()
+        or "\u4e00" <= ch <= "\u9fff"
+        or "\u3040" <= ch <= "\u30ff"
+        or "\uac00" <= ch <= "\ud7af"
+        for ch in text
+    )
+
+
+def looks_like_transcript(text: str) -> bool:
+    compact = " ".join(text.strip().split())
+    if len(compact) < MIN_TRANSCRIPT_TEXT_CHARS:
+        return False
+    normalized = compact.lower().strip(" .,!?:;，。！？、…~-_[]()（）【】")
+    if normalized in HALLUCINATED_TRANSCRIPTS:
+        return False
+    score = meaningful_text_score(compact)
+    if score < MIN_TRANSCRIPT_TEXT_CHARS:
+        return False
+    return score / max(1, len(compact)) >= 0.35
 
 
 def load_saved_settings(path: Path = CONFIG_PATH) -> dict[str, object]:
@@ -635,7 +683,7 @@ class AudioSubtitleWorker(threading.Thread):
             return
 
         samplerate = 16000
-        chunk_seconds = 4
+        chunk_seconds = 5
         self.output.put(Subtitle("音频字幕已启动", "正在监听电脑当前播放的声音。", "audio", "实时"))
 
         try:
@@ -653,16 +701,29 @@ class AudioSubtitleWorker(threading.Thread):
                             audio,
                             language=source_lang,
                             vad_filter=True,
+                            vad_parameters={
+                                "threshold": 0.58,
+                                "min_speech_duration_ms": 360,
+                                "min_silence_duration_ms": 700,
+                                "speech_pad_ms": 180,
+                            },
+                            condition_on_previous_text=False,
+                            no_speech_threshold=0.65,
+                            log_prob_threshold=-1.05,
+                            compression_ratio_threshold=2.4,
                             beam_size=1,
                         )
-                        text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
+                        text = self._segments_to_text(segments)
                     except Exception as exc:
                         self.output.put(Subtitle("语音识别失败", str(exc), "audio", "错误"))
                         continue
 
                     if text and text != self.last_text:
                         self.last_text = text
-                        translated = self.translator.translate(text, settings["source"], settings["target"])
+                        if settings.get("translate_audio", True):
+                            translated = self.translator.translate(text, settings["source"], settings["target"])
+                        else:
+                            translated = text
                         self.output.put(Subtitle(text, translated, "audio", "实时"))
         except Exception as exc:
             self.output.put(Subtitle("系统音频捕获中断", str(exc), "audio", "错误"))
@@ -679,7 +740,28 @@ class AudioSubtitleWorker(threading.Thread):
         if audio.size == 0:
             return True
         rms = float(np.sqrt(np.mean(audio * audio)))
-        return rms < 0.008
+        peak = float(np.max(np.abs(audio)))
+        active_ratio = float(np.mean(np.abs(audio) > AUDIO_ACTIVE_SAMPLE_THRESHOLD))
+        return (
+            rms < AUDIO_RMS_THRESHOLD
+            or peak < AUDIO_PEAK_THRESHOLD
+            or active_ratio < AUDIO_ACTIVE_RATIO_THRESHOLD
+        )
+
+    def _segments_to_text(self, segments) -> str:
+        accepted: list[str] = []
+        for segment in segments:
+            text = " ".join(str(getattr(segment, "text", "")).strip().split())
+            if not looks_like_transcript(text):
+                continue
+            no_speech_prob = float(getattr(segment, "no_speech_prob", 0.0) or 0.0)
+            avg_logprob = float(getattr(segment, "avg_logprob", 0.0) or 0.0)
+            compression_ratio = float(getattr(segment, "compression_ratio", 0.0) or 0.0)
+            if no_speech_prob > 0.7 or avg_logprob < -1.2 or compression_ratio > 2.6:
+                continue
+            accepted.append(text)
+        transcript = " ".join(accepted)
+        return transcript if looks_like_transcript(transcript) else ""
 
     def _select_loopback_device(self):
         settings = self.settings_getter()
@@ -777,30 +859,11 @@ class SubtitleWindow(tk.Toplevel):
         self.translated_text = "奶龙实时翻译已在后台运行"
         self.display_var = tk.StringVar(value=self.translated_text)
         self._drag_start: tuple[int, int] | None = None
+        self._resize_start: tuple[int, int, int, int] | None = None
 
         toolbar = tk.Frame(self, bg="#0f172a", height=22)
         toolbar.pack(fill="x", side="top")
         toolbar.pack_propagate(False)
-        tk.Label(
-            toolbar,
-            text="奶龙字幕",
-            fg="#cbd5e1",
-            bg="#0f172a",
-            font=("Microsoft YaHei UI", 9),
-        ).pack(side="left", padx=(10, 0))
-        tk.Button(
-            toolbar,
-            text="设置",
-            command=self.app.show_settings,
-            fg="#ffffff",
-            bg="#1f2937",
-            activebackground="#334155",
-            activeforeground="#ffffff",
-            relief="flat",
-            bd=0,
-            padx=8,
-            pady=0,
-        ).pack(side="right", padx=(0, 6), pady=2)
         tk.Button(
             toolbar,
             text="×",
@@ -824,6 +887,15 @@ class SubtitleWindow(tk.Toplevel):
             justify="center",
         )
         self.label.pack(fill="both", expand=True, padx=16, pady=(4, 10))
+        self.resize_grip = tk.Label(
+            self,
+            text="◢",
+            fg="#94a3b8",
+            bg="#111827",
+            cursor="size_nw_se",
+            font=("Microsoft YaHei UI", 10),
+        )
+        self.resize_grip.place(relx=1.0, rely=1.0, anchor="se", width=22, height=20)
 
         self.menu = tk.Menu(self, tearoff=False)
         self.menu.add_command(label="打开设置", command=self.app.show_settings)
@@ -837,6 +909,10 @@ class SubtitleWindow(tk.Toplevel):
             widget.bind("<B1-Motion>", self._drag)
             widget.bind("<Double-Button-1>", lambda _event: self.app.show_settings())
             widget.bind("<Button-3>", self._show_menu)
+        self.bind("<Configure>", self._on_configure)
+        self.resize_grip.bind("<ButtonPress-1>", self._start_resize)
+        self.resize_grip.bind("<B1-Motion>", self._resize)
+        self.resize_grip.bind("<Button-3>", self._show_menu)
 
     def _start_drag(self, event) -> None:
         self._drag_start = (event.x_root - self.winfo_x(), event.y_root - self.winfo_y())
@@ -846,6 +922,21 @@ class SubtitleWindow(tk.Toplevel):
             return
         offset_x, offset_y = self._drag_start
         self.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+
+    def _start_resize(self, event) -> None:
+        self._resize_start = (event.x_root, event.y_root, self.winfo_width(), self.winfo_height())
+
+    def _resize(self, event) -> None:
+        if self._resize_start is None:
+            return
+        start_x, start_y, start_w, start_h = self._resize_start
+        width = max(360, start_w + event.x_root - start_x)
+        height = max(58, start_h + event.y_root - start_y)
+        self.geometry(f"{width}x{height}")
+
+    def _on_configure(self, _event=None) -> None:
+        if hasattr(self, "label"):
+            self.label.configure(wraplength=max(260, self.winfo_width() - 48))
 
     def _show_menu(self, event) -> None:
         self.menu.tk_popup(event.x_root, event.y_root)
@@ -860,7 +951,7 @@ class SubtitleWindow(tk.Toplevel):
         self._refresh_text()
 
     def _refresh_text(self) -> None:
-        if self.show_original.get() and self.source_text:
+        if self.show_original.get() and self.source_text and self.source_text != self.translated_text:
             self.display_var.set(f"{self.source_text}  |  {self.translated_text}")
         else:
             self.display_var.set(self.translated_text)
@@ -975,8 +1066,8 @@ class App:
         self.instance_lock = instance_lock
         self.root = tk.Tk()
         self.root.title(APP_NAME)
-        self.root.geometry("920x680")
-        self.root.minsize(820, 620)
+        self.root.geometry("960x740")
+        self.root.minsize(860, 680)
         if ICON_PATH.exists():
             self.root.iconbitmap(str(ICON_PATH))
 
@@ -992,10 +1083,13 @@ class App:
 
         self.source_var = tk.StringVar(value=self._saved_choice(saved, "source_label", list(LANGUAGES), "自动检测"))
         self.target_var = tk.StringVar(value=self._saved_choice(saved, "target_label", list(LANGUAGES)[1:], "中文"))
+        self.feature_mode_var = tk.StringVar(value=self._initial_feature_mode(saved))
         self.mode_screen = tk.BooleanVar(value=bool(saved.get("mode_screen", True)))
         self.mode_audio = tk.BooleanVar(value=bool(saved.get("mode_audio", True)))
         self.show_original_var = tk.BooleanVar(value=bool(saved.get("show_original", False)))
-        self.display_mode_var = tk.StringVar(value=self._saved_choice(saved, "display_mode", ["字幕条", "文字覆盖"], "字幕条"))
+        self.display_mode_var = tk.StringVar(
+            value=self._saved_choice(saved, "display_mode", [DISPLAY_SUBTITLE_BAR, DISPLAY_TEXT_OVERLAY], DISPLAY_SUBTITLE_BAR)
+        )
         self.interval_var = tk.DoubleVar(value=self._saved_float(saved, "interval", 1.2, 0.6, 3.0))
         self.whisper_model_var = tk.StringVar(value=self._saved_choice(saved, "whisper_model", ["tiny", "base", "small"], "tiny"))
         self.ocr_engine_var = tk.StringVar(value=self._saved_choice(saved, "ocr_engine", ["Tesseract"], "Tesseract"))
@@ -1025,6 +1119,35 @@ class App:
             return default
         return min(max(value, minimum), maximum)
 
+    @staticmethod
+    def _initial_feature_mode(settings: dict[str, object]) -> str:
+        mode = settings.get("feature_mode")
+        if isinstance(mode, str) and mode in FEATURE_MODES:
+            return mode
+        if settings.get("display_mode") == DISPLAY_TEXT_OVERLAY:
+            return FEATURE_SCREEN_OVERLAY
+        if settings.get("mode_screen") and not settings.get("mode_audio"):
+            return FEATURE_SCREEN_OVERLAY
+        return FEATURE_AUDIO_TRANSLATE
+
+    def feature_mode(self) -> str:
+        mode = self.feature_mode_var.get()
+        return mode if mode in FEATURE_MODES else FEATURE_AUDIO_TRANSLATE
+
+    def display_mode_for_feature(self) -> str:
+        return DISPLAY_TEXT_OVERLAY if self.feature_mode() == FEATURE_SCREEN_OVERLAY else DISPLAY_SUBTITLE_BAR
+
+    def sync_feature_mode(self) -> None:
+        mode = self.feature_mode()
+        self.mode_screen.set(mode == FEATURE_SCREEN_OVERLAY)
+        self.mode_audio.set(mode in (FEATURE_AUDIO_SUBTITLE, FEATURE_AUDIO_TRANSLATE))
+        self.display_mode_var.set(self.display_mode_for_feature())
+        if self.subtitle_window and self.subtitle_window.winfo_exists() and mode == FEATURE_SCREEN_OVERLAY:
+            self.subtitle_window.withdraw()
+        if self.text_overlay_window and self.text_overlay_window.winfo_exists() and mode != FEATURE_SCREEN_OVERLAY:
+            self.text_overlay_window.hide()
+        self.save_settings()
+
     def _build_ui(self) -> None:
         shell = ttk.Frame(self.root, padding=22)
         shell.pack(fill="both", expand=True)
@@ -1046,7 +1169,27 @@ class App:
             font=("Microsoft YaHei UI", 11),
         ).pack(anchor="w", pady=(4, 0))
 
-        controls = ttk.LabelFrame(shell, text="翻译设置", padding=16)
+        feature_box = ttk.LabelFrame(shell, text="功能选择", padding=14)
+        feature_box.pack(fill="x", pady=(24, 12))
+        feature_options = [
+            (FEATURE_AUDIO_SUBTITLE, "字幕生成", "自动检测设备播放音频，生成原语言字幕"),
+            (FEATURE_AUDIO_TRANSLATE, "字幕翻译", "自动识别播放音频语言，生成中文或所选目标语言字幕"),
+            (FEATURE_SCREEN_OVERLAY, "覆盖翻译", "识别屏幕外语文字，翻译后覆盖到原位置附近"),
+        ]
+        for column, (value, title, hint) in enumerate(feature_options):
+            card = ttk.Frame(feature_box, padding=(8, 4))
+            card.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 12, 0))
+            ttk.Radiobutton(
+                card,
+                text=title,
+                value=value,
+                variable=self.feature_mode_var,
+                command=self.sync_feature_mode,
+            ).pack(anchor="w")
+            ttk.Label(card, text=hint, wraplength=250, font=("Microsoft YaHei UI", 9)).pack(anchor="w", pady=(4, 0))
+            feature_box.columnconfigure(column, weight=1)
+
+        controls = ttk.LabelFrame(shell, text="语言和识别设置", padding=16)
         controls.pack(fill="x", pady=(24, 12))
 
         ttk.Label(controls, text="原语言").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -1069,14 +1212,8 @@ class App:
 
         ttk.Button(controls, text="中外互换", command=self.swap_languages).grid(row=0, column=4, sticky="w", padx=(14, 0))
 
-        ttk.Checkbutton(controls, text="检测屏幕显示语言", variable=self.mode_screen).grid(
-            row=1, column=0, columnspan=2, sticky="w", pady=(16, 0)
-        )
-        ttk.Checkbutton(controls, text="检测电脑内置播放音频", variable=self.mode_audio).grid(
-            row=1, column=2, columnspan=2, sticky="w", pady=(16, 0)
-        )
         ttk.Checkbutton(controls, text="显示原文", variable=self.show_original_var, command=self.apply_display_options).grid(
-            row=1, column=4, sticky="w", pady=(16, 0)
+            row=1, column=0, sticky="w", pady=(16, 0)
         )
 
         ttk.Label(controls, text="刷新间隔").grid(row=2, column=0, sticky="w", pady=(16, 0))
@@ -1102,15 +1239,6 @@ class App:
             width=46,
         )
         self.audio_device_combo.grid(row=3, column=1, columnspan=4, sticky="ew", pady=(16, 0))
-
-        ttk.Label(controls, text="显示方式").grid(row=4, column=0, sticky="w", pady=(16, 0))
-        ttk.Combobox(
-            controls,
-            textvariable=self.display_mode_var,
-            values=["字幕条", "文字覆盖"],
-            state="readonly",
-            width=18,
-        ).grid(row=4, column=1, sticky="w", pady=(16, 0))
 
         ttk.Label(controls, text="OCR 引擎").grid(row=4, column=2, sticky="e", padx=(14, 8), pady=(16, 0))
         ttk.Combobox(
@@ -1156,6 +1284,7 @@ class App:
         ttk.Label(shell, textvariable=self.status_var).pack(anchor="w", pady=(14, 0))
 
     def settings(self) -> dict[str, object]:
+        mode = self.feature_mode()
         return {
             "source": LANGUAGES[self.source_var.get()],
             "target": LANGUAGES[self.target_var.get()],
@@ -1164,18 +1293,22 @@ class App:
             "whisper_model": self.whisper_model_var.get(),
             "audio_device": self.audio_device_var.get(),
             "show_original": self.show_original_var.get(),
-            "display_mode": self.display_mode_var.get(),
+            "display_mode": self.display_mode_for_feature(),
+            "feature_mode": mode,
+            "translate_audio": mode == FEATURE_AUDIO_TRANSLATE,
             "ocr_engine": self.ocr_engine_var.get(),
         }
 
     def saved_settings(self) -> dict[str, object]:
+        mode = self.feature_mode()
         return {
             "source_label": self.source_var.get(),
             "target_label": self.target_var.get(),
-            "mode_screen": self.mode_screen.get(),
-            "mode_audio": self.mode_audio.get(),
+            "feature_mode": mode,
+            "mode_screen": mode == FEATURE_SCREEN_OVERLAY,
+            "mode_audio": mode in (FEATURE_AUDIO_SUBTITLE, FEATURE_AUDIO_TRANSLATE),
             "show_original": self.show_original_var.get(),
-            "display_mode": self.display_mode_var.get(),
+            "display_mode": self.display_mode_for_feature(),
             "interval": float(self.interval_var.get()),
             "whisper_model": self.whisper_model_var.get(),
             "ocr_engine": self.ocr_engine_var.get(),
@@ -1231,18 +1364,22 @@ class App:
 
     def start(self) -> None:
         self.stop()
+        self.sync_feature_mode()
         self.save_settings()
         self.stop_event = threading.Event()
         startup_messages: list[str] = []
+        mode = self.feature_mode()
+        use_screen = mode == FEATURE_SCREEN_OVERLAY
+        use_audio = mode in (FEATURE_AUDIO_SUBTITLE, FEATURE_AUDIO_TRANSLATE)
 
-        if self.mode_screen.get():
+        if use_screen:
             if self.engines.mss and self.engines.pytesseract and self.engines.tesseract_path:
                 self.workers.append(
                     ScreenOcrWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
                 )
             else:
                 startup_messages.append("屏幕翻译缺少 mss、pytesseract 或 Tesseract OCR 程序。")
-        if self.mode_audio.get():
+        if use_audio:
             if self.engines.soundcard and self.engines.faster_whisper and self.engines.numpy:
                 self.workers.append(
                     AudioSubtitleWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
@@ -1258,7 +1395,12 @@ class App:
             messagebox.showinfo(APP_NAME, message)
             return
 
-        self.show_subtitle_window()
+        if mode == FEATURE_SCREEN_OVERLAY:
+            if self.subtitle_window and self.subtitle_window.winfo_exists():
+                self.subtitle_window.withdraw()
+            self.show_text_overlay_window()
+        else:
+            self.show_subtitle_window()
         self.apply_display_options()
         for worker in self.workers:
             worker.start()
@@ -1294,8 +1436,11 @@ class App:
         self.save_settings()
         if self.subtitle_window and self.subtitle_window.winfo_exists():
             self.subtitle_window.set_show_original(self.show_original_var.get())
-            self.subtitle_window.deiconify()
-        if self.text_overlay_window and self.text_overlay_window.winfo_exists() and self.display_mode_var.get() != "文字覆盖":
+            if self.feature_mode() == FEATURE_SCREEN_OVERLAY:
+                self.subtitle_window.withdraw()
+            else:
+                self.subtitle_window.deiconify()
+        if self.text_overlay_window and self.text_overlay_window.winfo_exists() and self.display_mode_for_feature() != DISPLAY_TEXT_OVERLAY:
             self.text_overlay_window.hide()
 
     def show_engine_status(self) -> None:
@@ -1324,7 +1469,7 @@ class App:
             self.preview_source.set(subtitle.source)
             self.preview_translated.set(subtitle.translated)
             self.status_var.set(subtitle.status)
-            if self.display_mode_var.get() == "文字覆盖" and subtitle.origin == "screen":
+            if self.display_mode_for_feature() == DISPLAY_TEXT_OVERLAY and subtitle.origin == "screen":
                 self.show_text_overlay_window()
                 self.text_overlay_window.update_overlay(subtitle, self.show_original_var.get())
             elif self.subtitle_window and self.subtitle_window.winfo_exists():
@@ -1332,7 +1477,8 @@ class App:
         self.root.after(250, self._poll_subtitles)
 
     def start_minimized(self) -> None:
-        self.show_subtitle_window()
+        if self.feature_mode() != FEATURE_SCREEN_OVERLAY:
+            self.show_subtitle_window()
         self.start()
         self.root.withdraw()
         self.status_var.set("后台运行中")

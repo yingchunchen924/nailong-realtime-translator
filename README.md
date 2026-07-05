@@ -23,9 +23,13 @@
 apps\windows\start.bat
 ```
 
-启动后默认进入后台，只显示字幕条。系统托盘菜单可打开设置、暂停翻译或退出。
+启动后会先显示主界面，可选择：
 
-Windows 端可在设置里切换“字幕条 / 文字覆盖”。文字覆盖模式会使用 Tesseract 的行级坐标，把屏幕文字翻译成多个小浮层并放到原文字附近；“显示原文”开启时会同时显示原文和译文。
+- `字幕生成`：监听电脑当前播放的声音，生成原语言字幕。
+- `字幕翻译`：自动识别电脑播放声音的语言，翻译成中文或所选目标语言字幕。
+- `覆盖翻译`：识别屏幕文字，把译文覆盖到原文字附近，可框选屏幕范围。
+
+开始后主界面可最小化或隐藏到托盘，屏幕上只保留字幕条或文字覆盖层。字幕条保持最上层，可拖动、右键操作、点击 `×` 隐藏，并可从右下角调整大小。
 
 Windows exe 打包产物位于 `dist\windows\奶龙实时翻译.exe`。
 
@@ -37,9 +41,9 @@ Windows exe 打包产物位于 `dist\windows\奶龙实时翻译.exe`。
 - `nailong-windows.zip`
 - `nailong-realtime-translator-source.zip`
 
-当前发布版：`v0.1.7`
+当前发布版：`v0.1.8`
 
-下载地址：https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.7
+下载地址：https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.8
 
 普通用户安装说明见 `docs/download.md`。
 
