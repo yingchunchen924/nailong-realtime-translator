@@ -73,6 +73,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Tesseract OCR
+        shell: pwsh
+        run: choco install tesseract -y --no-progress
+
       - name: Validate Python
         run: |
           python -m py_compile apps/windows/app.py
@@ -81,7 +85,7 @@ jobs:
       - name: Build exe
         working-directory: apps/windows
         run: |
-          pyinstaller --noconsole --onefile --clean --distpath ../../dist/windows --workpath build --name "奶龙实时翻译" --icon "../../assets/nailong.ico" --add-data "../../assets;assets" --add-data "../../tessdata;tessdata" app.py
+          pyinstaller --noconfirm --clean --distpath ../../dist/windows --workpath build nailong_windows.spec
 
       - name: Package exe
         shell: pwsh

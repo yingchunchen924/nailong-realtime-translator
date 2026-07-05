@@ -35,6 +35,7 @@ ASSET_DIR = resource_path("assets")
 ICON_PATH = resource_path("assets", "nailong.ico")
 IMAGE_PATH = resource_path("assets", "nailong.jpg")
 LOCAL_TESSDATA_DIR = resource_path("tessdata")
+BUNDLED_TESSERACT_EXE = resource_path("tesseract", "tesseract.exe")
 CONFIG_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming")) / "NailongRealtimeTranslator"
 CONFIG_PATH = CONFIG_DIR / "settings.json"
 WINDOWS_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
@@ -259,6 +260,7 @@ class OptionalEngines:
             return None
 
         candidates = [
+            str(BUNDLED_TESSERACT_EXE) if BUNDLED_TESSERACT_EXE.exists() else None,
             shutil.which("tesseract"),
             str(DEFAULT_TESSERACT_EXE) if DEFAULT_TESSERACT_EXE.exists() else None,
         ]

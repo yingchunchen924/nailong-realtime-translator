@@ -4,6 +4,7 @@ __pycache__/
 dist/
 build/
 *.spec
+!apps/windows/nailong_windows.spec
 .gradle/
 local.properties
 *.apk

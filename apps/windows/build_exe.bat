@@ -17,14 +17,9 @@ set "USERPROFILE=%CD%\build\home"
 set "HOME=%CD%\build\home"
 set "PYINSTALLER_CONFIG_DIR=%CD%\build\resources"
 ".venv\Scripts\pyinstaller.exe" ^
-  --noconsole ^
-  --onefile ^
+  --noconfirm ^
   --clean ^
   --distpath "..\..\dist\windows" ^
   --workpath "build" ^
-  --name "奶龙实时翻译" ^
-  --icon "..\..\assets\nailong.ico" ^
-  --add-data "..\..\assets;assets" ^
-  --add-data "..\..\tessdata;tessdata" ^
-  app.py
+  nailong_windows.spec
 pause

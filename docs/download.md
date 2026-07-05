@@ -1,10 +1,10 @@
 # 下载安装
 
-当前可下载版本：v0.1.5
+当前可下载版本：v0.1.6
 
 下载页面：
 
-https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.5
+https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.6
 
 ## Windows 电脑
 

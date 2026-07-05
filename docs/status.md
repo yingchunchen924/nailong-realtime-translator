@@ -17,6 +17,7 @@
 - 系统播放音频 loopback 设备选择。
 - 自动保存并恢复语言、检测模式、显示方式、刷新间隔、语音模型、音频设备和屏幕区域。
 - 设置页可开启或关闭 Windows 开机自启，方便长期后台常驻。
+- Windows 发布包会显式打包动态加载的 OCR/音频库，并内置 Tesseract OCR 程序。
 - Windows exe 本机打包通过。
 
 待继续：
@@ -63,7 +64,7 @@ yingchunchen924/nailong-realtime-translator
 
 当前 `main` 分支已成功推送到 GitHub。仓库包含 Windows 和 Android 的 GitHub Actions 构建流程。
 
-当前发布版 `v0.1.5` 的 Release 包包含：
+当前发布版 `v0.1.6` 的 Release 包包含：
 
 - `nailong-android-debug.zip`
 - `nailong-windows.zip`
