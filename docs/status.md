@@ -5,8 +5,10 @@
 已完成：
 
 - 后台和托盘运行。
-- 默认隐藏设置窗口，只显示底部一行字幕。
+- 普通双击启动会先显示控制面板；开机自启后台模式才会自动隐藏设置窗口并启动字幕。
 - 双击字幕条打开设置。
+- 普通启动先显示控制面板，不再自动开始翻译和隐藏设置窗口。
+- 字幕条可拖动，可右键打开菜单，也可点击“×”隐藏。
 - 可选择字幕条模式或文字覆盖模式。
 - 可选择是否显示原文。
 - Tesseract 行级 OCR，能把屏幕文字识别为多个文字块。
@@ -61,7 +63,7 @@ yingchunchen924/nailong-realtime-translator
 
 当前 `main` 分支已成功推送到 GitHub。仓库包含 Windows 和 Android 的 GitHub Actions 构建流程。
 
-当前发布版 `v0.1.4` 的 Release 包包含：
+当前发布版 `v0.1.5` 的 Release 包包含：
 
 - `nailong-android-debug.zip`
 - `nailong-windows.zip`

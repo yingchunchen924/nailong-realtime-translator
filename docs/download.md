@@ -1,16 +1,18 @@
 # 下载安装
 
-当前可下载版本：v0.1.4
+当前可下载版本：v0.1.5
 
 下载页面：
 
-https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.4
+https://github.com/yingchunchen924/nailong-realtime-translator/releases/tag/v0.1.5
 
 ## Windows 电脑
 
 下载 `nailong-windows.zip`，解压后运行里面的 `奶龙实时翻译.exe`。
 
-启动后软件会在后台运行，屏幕底部只显示一行字幕。需要调整语言、字幕模式、文字覆盖、是否显示原文时，可以从系统托盘打开设置。
+双击启动后会先显示设置窗口。选择语言、检测方式和显示方式后，点击“开始实时翻译”，屏幕上才会显示字幕条。
+
+字幕条会保持在屏幕最上层，可以拖动位置；右键字幕条可打开设置、隐藏字幕条、停止翻译或退出软件。字幕条右上角的“×”只隐藏字幕条，不会强制退出软件。
 
 设置页里的“开机自启”可以让软件随 Windows 登录后自动后台运行。
 

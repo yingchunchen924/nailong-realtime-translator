@@ -96,6 +96,7 @@ def test_windows_startup_command_quotes_paths():
         executable=Path(r"C:\Program Files\Python311\python.exe"),
         script_path=Path(r"C:\Users\hp\Documents\Nailong App\app.py"),
         frozen=False,
+        background=False,
     )
 
     assert command == (
@@ -111,6 +112,18 @@ def test_windows_startup_command_for_packaged_exe_has_no_script_arg():
         executable=Path(r"C:\Program Files\Nailong\奶龙实时翻译.exe"),
         script_path=Path(r"C:\ignored\app.py"),
         frozen=True,
+        background=False,
     )
 
     assert command == r'"C:\Program Files\Nailong\奶龙实时翻译.exe"'
+
+
+def test_windows_autostart_command_runs_in_background():
+    app = load_windows_app()
+
+    command = app.windows_startup_command(
+        executable=Path(r"C:\Program Files\Nailong\奶龙实时翻译.exe"),
+        frozen=True,
+    )
+
+    assert command == r'"C:\Program Files\Nailong\奶龙实时翻译.exe" --background'

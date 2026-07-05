@@ -18,8 +18,8 @@ android {
         applicationId = "com.nailong.realtimetranslator"
         minSdk = 29
         targetSdk = nailongTargetSdk
-        versionCode = 4
-        versionName = "0.1.4"
+        versionCode = 5
+        versionName = "0.1.5"
     }
 
     compileOptions {

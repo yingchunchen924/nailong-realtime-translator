@@ -145,6 +145,7 @@ def windows_startup_command(
     executable: Path | None = None,
     script_path: Path | None = None,
     frozen: bool | None = None,
+    background: bool = True,
 ) -> str:
     is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
     exe = Path(executable or sys.executable)
@@ -156,6 +157,8 @@ def windows_startup_command(
     args = [str(exe)]
     if not is_frozen:
         args.append(str(script_path or BASE_DIR / "app.py"))
+    if background:
+        args.append("--background")
     return subprocess.list2cmdline(args)
 
 
@@ -693,12 +696,14 @@ class RegionSelector(tk.Toplevel):
 
 
 class SubtitleWindow(tk.Toplevel):
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, app: "App") -> None:
         super().__init__(root)
+        self.root = root
+        self.app = app
         self.title("奶龙字幕")
         screen_w = self.winfo_screenwidth()
         width = min(980, max(680, screen_w - 320))
-        height = 72
+        height = 84
         x = int((screen_w - width) / 2)
         y = max(20, self.winfo_screenheight() - height - 88)
         self.geometry(f"{width}x{height}+{x}+{y}")
@@ -713,19 +718,79 @@ class SubtitleWindow(tk.Toplevel):
         self.source_text = ""
         self.translated_text = "奶龙实时翻译已在后台运行"
         self.display_var = tk.StringVar(value=self.translated_text)
+        self._drag_start: tuple[int, int] | None = None
 
+        toolbar = tk.Frame(self, bg="#0f172a", height=22)
+        toolbar.pack(fill="x", side="top")
+        toolbar.pack_propagate(False)
+        tk.Label(
+            toolbar,
+            text="奶龙字幕",
+            fg="#cbd5e1",
+            bg="#0f172a",
+            font=("Microsoft YaHei UI", 9),
+        ).pack(side="left", padx=(10, 0))
+        tk.Button(
+            toolbar,
+            text="设置",
+            command=self.app.show_settings,
+            fg="#ffffff",
+            bg="#1f2937",
+            activebackground="#334155",
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            padx=8,
+            pady=0,
+        ).pack(side="right", padx=(0, 6), pady=2)
+        tk.Button(
+            toolbar,
+            text="×",
+            command=self.app.hide_subtitle_window,
+            fg="#ffffff",
+            bg="#7f1d1d",
+            activebackground="#991b1b",
+            activeforeground="#ffffff",
+            relief="flat",
+            bd=0,
+            width=3,
+            pady=0,
+        ).pack(side="right", padx=(0, 8), pady=2)
         self.label = tk.Label(
             self,
             textvariable=self.display_var,
             fg="#ffffff",
             bg="#111827",
             font=("Microsoft YaHei UI", 20, "bold"),
-            wraplength=width - 48,
+            wraplength=width - 64,
             justify="center",
         )
-        self.label.pack(fill="both", expand=True, padx=24, pady=10)
-        self.label.bind("<Double-Button-1>", lambda _event: root.deiconify())
-        self.bind("<Double-Button-1>", lambda _event: root.deiconify())
+        self.label.pack(fill="both", expand=True, padx=16, pady=(4, 10))
+
+        self.menu = tk.Menu(self, tearoff=False)
+        self.menu.add_command(label="打开设置", command=self.app.show_settings)
+        self.menu.add_command(label="隐藏字幕条", command=self.app.hide_subtitle_window)
+        self.menu.add_command(label="停止翻译", command=self.app.stop)
+        self.menu.add_separator()
+        self.menu.add_command(label="退出软件", command=self.app.quit_app)
+
+        for widget in (self, toolbar, self.label):
+            widget.bind("<ButtonPress-1>", self._start_drag)
+            widget.bind("<B1-Motion>", self._drag)
+            widget.bind("<Double-Button-1>", lambda _event: self.app.show_settings())
+            widget.bind("<Button-3>", self._show_menu)
+
+    def _start_drag(self, event) -> None:
+        self._drag_start = (event.x_root - self.winfo_x(), event.y_root - self.winfo_y())
+
+    def _drag(self, event) -> None:
+        if self._drag_start is None:
+            return
+        offset_x, offset_y = self._drag_start
+        self.geometry(f"+{event.x_root - offset_x}+{event.y_root - offset_y}")
+
+    def _show_menu(self, event) -> None:
+        self.menu.tk_popup(event.x_root, event.y_root)
 
     def set_show_original(self, value: bool) -> None:
         self.show_original.set(value)
@@ -885,7 +950,8 @@ class App:
         self._setup_tray()
         self.root.after(250, self._poll_subtitles)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.root.after(300, self.start_minimized)
+        if "--background" in sys.argv:
+            self.root.after(300, self.start_minimized)
 
     @staticmethod
     def _saved_choice(settings: dict[str, object], key: str, valid: list[str], default: str) -> str:
@@ -1108,39 +1174,58 @@ class App:
         self.stop()
         self.save_settings()
         self.stop_event = threading.Event()
-        self.show_subtitle_window()
-        self.apply_display_options()
+        startup_messages: list[str] = []
 
         if self.mode_screen.get():
-            self.workers.append(
-                ScreenOcrWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
-            )
+            if self.engines.mss and self.engines.pytesseract and self.engines.tesseract_path:
+                self.workers.append(
+                    ScreenOcrWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
+                )
+            else:
+                startup_messages.append("屏幕翻译缺少 mss、pytesseract 或 Tesseract OCR 程序。")
         if self.mode_audio.get():
-            self.workers.append(
-                AudioSubtitleWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
-            )
+            if self.engines.soundcard and self.engines.faster_whisper and self.engines.numpy:
+                self.workers.append(
+                    AudioSubtitleWorker(self.engines, self.translator, self.subtitles, self.stop_event, self.settings)
+                )
+            else:
+                startup_messages.append("音频字幕缺少 soundcard、faster-whisper 或 numpy。")
         if not self.workers:
-            messagebox.showinfo(APP_NAME, "请至少选择一种检测方式。")
+            message = "\n".join(startup_messages) if startup_messages else "请至少选择一种检测方式。"
+            self.preview_source.set("未启动实时翻译")
+            self.preview_translated.set(message)
+            self.status_var.set("需要先检查设置或依赖")
+            self.show_settings()
+            messagebox.showinfo(APP_NAME, message)
             return
 
+        self.show_subtitle_window()
+        self.apply_display_options()
         for worker in self.workers:
             worker.start()
-        self.status_var.set("实时翻译已启动")
+        suffix = f"；{len(startup_messages)} 项功能因依赖缺失未启动" if startup_messages else ""
+        self.status_var.set(f"实时翻译已启动{suffix}")
 
     def stop(self) -> None:
         self.stop_event.set()
         self.workers = []
+        if self.subtitle_window and self.subtitle_window.winfo_exists():
+            self.subtitle_window.withdraw()
         if self.text_overlay_window and self.text_overlay_window.winfo_exists():
             self.text_overlay_window.hide()
         self.status_var.set("已停止")
 
     def show_subtitle_window(self) -> None:
         if self.subtitle_window is None or not self.subtitle_window.winfo_exists():
-            self.subtitle_window = SubtitleWindow(self.root)
+            self.subtitle_window = SubtitleWindow(self.root, self)
         else:
             self.subtitle_window.deiconify()
             self.subtitle_window.lift()
         self.apply_display_options()
+
+    def hide_subtitle_window(self) -> None:
+        if self.subtitle_window and self.subtitle_window.winfo_exists():
+            self.subtitle_window.withdraw()
 
     def show_text_overlay_window(self) -> None:
         if self.text_overlay_window is None or not self.text_overlay_window.winfo_exists():
