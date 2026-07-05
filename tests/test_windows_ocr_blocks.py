@@ -127,3 +127,12 @@ def test_windows_autostart_command_runs_in_background():
     )
 
     assert command == r'"C:\Program Files\Nailong\奶龙实时翻译.exe" --background'
+
+
+def test_single_instance_lock_is_noop_on_non_windows(monkeypatch):
+    app = load_windows_app()
+
+    monkeypatch.setattr(app.os, "name", "posix")
+    lock = app.acquire_single_instance_lock()
+
+    assert lock is not None

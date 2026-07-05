@@ -40,6 +40,7 @@ CONFIG_DIR = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming")) / "
 CONFIG_PATH = CONFIG_DIR / "settings.json"
 WINDOWS_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 WINDOWS_RUN_VALUE = "NailongRealtimeTranslator"
+WINDOWS_MUTEX_NAME = "Local\\NailongRealtimeTranslatorSingleInstance"
 
 LANGUAGES = {
     "自动检测": "auto",
@@ -193,6 +194,61 @@ def set_windows_autostart(enabled: bool) -> bool:
         return True
     except Exception:
         return False
+
+
+def acquire_single_instance_lock():
+    if os.name != "nt":
+        return object()
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        kernel32.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.CreateMutexW(None, False, WINDOWS_MUTEX_NAME)
+        if not handle:
+            return object()
+        already_exists = kernel32.GetLastError() == 183
+        if already_exists:
+            kernel32.CloseHandle(handle)
+            return None
+        return handle
+    except Exception:
+        return object()
+
+
+def release_single_instance_lock(handle) -> None:
+    if os.name != "nt" or not handle:
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        ctypes.windll.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        ctypes.windll.kernel32.CloseHandle.restype = wintypes.BOOL
+        ctypes.windll.kernel32.CloseHandle(handle)
+    except Exception:
+        pass
+
+
+def show_already_running_notice() -> None:
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                None,
+                "奶龙实时翻译已经在运行。请先从当前窗口或托盘菜单退出旧进程。",
+                APP_NAME,
+                0x40,
+            )
+            return
+        except Exception:
+            pass
+    print(f"{APP_NAME} 已经在运行。")
 
 
 @dataclass
@@ -915,7 +971,8 @@ class TextOverlayWindow(tk.Toplevel):
 
 
 class App:
-    def __init__(self) -> None:
+    def __init__(self, instance_lock=None) -> None:
+        self.instance_lock = instance_lock
         self.root = tk.Tk()
         self.root.title(APP_NAME)
         self.root.geometry("920x680")
@@ -1306,14 +1363,16 @@ class App:
             self.tray_icon = None
 
     def _on_close(self) -> None:
-        self.save_settings()
-        self.hide_settings()
+        self.quit_app()
 
     def quit_app(self) -> None:
         self.save_settings()
         self.stop()
         if self.tray_icon:
             self.tray_icon.stop()
+            self.tray_icon = None
+        release_single_instance_lock(self.instance_lock)
+        self.instance_lock = None
         self.root.destroy()
 
     def run(self) -> None:
@@ -1321,4 +1380,8 @@ class App:
 
 
 if __name__ == "__main__":
-    App().run()
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock is None:
+        show_already_running_notice()
+        sys.exit(0)
+    App(instance_lock).run()
